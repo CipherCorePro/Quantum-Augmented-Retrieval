@@ -2,9 +2,7 @@
 
 # Filename: qllm_train_hybrid.py
 # Description: Trainingsskript für das Quantum-Arona Hybrid LLM.
-#              Lädt Daten, verarbeitet sie mit QuantumEnhancedTextProcessor
-#              über mehrere Epochen und speichert den gelernten Zustand.
-# Version: 0.5 - Epoch Training & Qubit Debugging
+# Version: 1.2 - Corrected serialization logic and training flow.
 # Author: [CipherCore Technology] & Gemini & Your Input
 
 import os
@@ -12,25 +10,27 @@ import sys
 import time
 import json
 import argparse
-import copy # Für deepcopy von Chunks
+import copy
 import random
-from typing import Optional # Für Type Hinting
+import traceback
+from typing import Optional, List, Dict, Any
+from collections import deque
+from datetime import datetime
+
+# Stelle sicher, dass numpy importiert ist
+import numpy as np
 
 # Füge das Verzeichnis hinzu, in dem sich quantum_arona_hybrid_llm.py befindet
 try:
-    # Importiere die Hauptklasse und ggf. Typen für Type Hinting
-    from quantum_arona_hybrid_llm import QuantumEnhancedTextProcessor, TextChunk
-    # Optional: tqdm importieren
+    from quantum_arona_hybrid_llm import QuantumEnhancedTextProcessor, TextChunk, Node, Connection, QuantumNodeSystem
     try:
         from tqdm import tqdm
         TQDM_AVAILABLE = True
     except ImportError:
         TQDM_AVAILABLE = False
-        def tqdm(iterable, *args, **kwargs): # Fallback-Implementierung
-            # print("Info: tqdm nicht gefunden, Fortschrittsbalken nicht verfügbar.") # Weniger verbose
-            return iterable
+        def tqdm(iterable, *args, **kwargs): return iterable
 except ImportError:
-    print("FEHLER: Konnte 'QuantumEnhancedTextProcessor' nicht importieren.")
+    print("FEHLER: Konnte 'QuantumEnhancedTextProcessor' oder abhängige Klassen nicht importieren.")
     print("Stelle sicher, dass 'quantum_arona_hybrid_llm.py' im selben Verzeichnis oder im Python-Pfad liegt.")
     sys.exit(1)
 
@@ -38,12 +38,6 @@ def train_hybrid_model(config_path: str, state_path: str, force_rebuild: bool = 
     """
     Hauptfunktion zum Trainieren/Verarbeiten der Daten mit dem Hybridmodell
     über mehrere Epochen.
-
-    Args:
-        config_path (str): Pfad zur Konfigurationsdatei (JSON).
-        state_path (str): Pfad zur Datei, in der der Zustand gespeichert/geladen wird.
-        force_rebuild (bool): Wenn True, wird ein vorhandener Zustand ignoriert
-                              und das Modell von Grund auf neu aufgebaut.
     """
     print("="*50)
     print(" Starte Training/Datenverarbeitung für Quantum-Arona Hybrid LLM")
@@ -54,115 +48,105 @@ def train_hybrid_model(config_path: str, state_path: str, force_rebuild: bool = 
 
     start_time = time.time()
 
-    # Variable für die aus Datei geladene Config
-    config_from_file = None
-
     # Lade zuerst die aktuelle Config aus der Datei
+    config_from_file = None
     print(f"INFO: Lese aktuelle Konfiguration aus {config_path}...")
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             config_from_file = json.load(f)
-        # --- DEBUGGING CONFIG AUS DATEI ---
-        print(f"DEBUG: Wert für 'default_num_qubits' aus Datei {config_path}: {config_from_file.get('default_num_qubits')}")
-        # --- ENDE DEBUGGING ---
     except Exception as e:
         print(f"FATALER FEHLER: Konnte Konfigurationsdatei '{config_path}' nicht laden: {e}")
-        sys.exit(1) # Beenden, wenn die Haupt-Config nicht gelesen werden kann
+        sys.exit(1)
 
     # 1. Lade Zustand oder initialisiere neu
     processor: Optional[QuantumEnhancedTextProcessor] = None
     if not force_rebuild and os.path.exists(state_path):
         print(f"\nVersuche, Zustand aus '{state_path}' zu laden...")
-        # Übergebe die GERADE GELADENE Config an load_state, damit __init__ den korrekten Wert hat,
-        # falls der Prozessor neu erstellt werden muss (obwohl das nicht der Fall sein sollte, wenn state existiert)
-        # Wichtiger: Das Update NACH dem Laden.
-        processor = QuantumEnhancedTextProcessor.load_state(state_path)
+        processor = QuantumEnhancedTextProcessor.load_state(state_path) # Verwendet Config aus State
         if processor:
-            # --- DEBUGGING NACH LADEN ---
-            print(f"DEBUG: Qubits im Prozessor VOR Update (aus geladenem State): {processor.config.get('default_num_qubits')}")
-            # --- ENDE DEBUGGING ---
-            print("DEBUG: Versuche Konfiguration im geladenen Prozessor zu aktualisieren...")
+            print("INFO: Versuche Konfiguration im geladenen Prozessor zu aktualisieren...")
             try:
-                # Aktualisiere die Config des geladenen Prozessors mit der aus der Datei
-                processor.config.update(config_from_file)
-                # --- DEBUGGING NACH UPDATE ---
-                print(f"DEBUG: Qubits im Prozessor NACH Update mit {config_path}: {processor.config.get('default_num_qubits')}")
-                # --- ENDE DEBUGGING ---
+                processor.config.update(config_from_file) # Wichtig: Update mit aktueller Config
+                # Aktualisiere abhängige Attribute im Prozessor-Objekt
+                processor.self_learning_enabled = processor.config.get("enable_self_learning", False)
+                processor.learn_file_path = processor.config.get("self_learning_file_path", "./training_data/learn.txt")
+                processor.learn_source_name = processor.config.get("self_learning_source_name", "Generated Responses")
+                # Aktualisiere RAG Status basierend auf aktueller Config und Verfügbarkeit
+                processor.rag_enabled = processor.config.get("enable_rag", False) and GEMINI_AVAILABLE
                 print(" -> Konfiguration im geladenen Prozessor mit aktueller Datei aktualisiert.")
             except Exception as e:
-                print(f"WARNUNG: Konnte Konfiguration im geladenen Prozessor nicht aktualisieren: {e}")
+                print(f"WARNUNG: Konnte Konfiguration im geladenen Prozessor nicht vollständig aktualisieren: {e}")
         else:
             print(f" -> Laden des Zustands fehlgeschlagen oder Datei leer.")
 
-    # Wenn kein Prozessor geladen wurde, initialisiere neu mit der Config aus der Datei
+    # Wenn kein Prozessor geladen wurde, initialisiere neu
     if processor is None:
         if force_rebuild: print(f"\nNeuerstellung erzwungen.")
         print(f"\nInitialisiere Modell mit Konfiguration aus '{config_path}'.")
         try:
-            # Initialisiere direkt mit der bereits geladenen config_from_file
-            processor = QuantumEnhancedTextProcessor(config_dict=config_from_file)
-            # --- DEBUGGING NACH INIT ---
-            if processor:
-                 print(f"DEBUG: Qubits nach Neu-Initialisierung: {processor.config.get('default_num_qubits')}")
-            # --- ENDE DEBUGGING ---
+            processor = QuantumEnhancedTextProcessor(config_dict=config_from_file) # Init mit aktueller Config
         except Exception as e:
              print(f"\nFATALER FEHLER: Initialisierung fehlgeschlagen: {e}"); sys.exit(1)
-        if not processor or not hasattr(processor, 'config'): print("\nFATALER FEHLER: Prozessor-Objekt konnte nicht korrekt initialisiert werden."); sys.exit(1)
+        if not processor or not hasattr(processor, 'config'):
+            print("\nFATALER FEHLER: Prozessor-Objekt konnte nicht korrekt initialisiert werden."); sys.exit(1)
 
     # Stelle sicher, dass wir einen gültigen Prozessor haben
     if processor is None: print("\nFATALER FEHLER: Konnte keinen Prozessor laden oder initialisieren."); sys.exit(1)
 
-    # --- FINALE PRÜFUNG VOR TRAINING ---
-    print(f"\nDEBUG: Finale Qubit-Anzahl VOR dem Training: {processor.config.get('default_num_qubits')}")
-    # --- ENDE FINALE PRÜFUNG ---
+    # --- Finale Prüfung vor Training ---
+    print(f"\nINFO: Finale Qubit-Anzahl VOR dem Training: {processor.config.get('default_num_qubits')}")
+    print(f"INFO: Self-Learning VOR dem Training: {'Aktiviert' if processor.self_learning_enabled else 'Deaktiviert'}")
+    print(f"INFO: RAG Status VOR Training: {'Aktiviert' if processor.rag_enabled else 'Deaktiviert'}")
+    print(f"INFO: Simulation Steps After Training VOR Training: {processor.config.get('simulation_steps_after_training')}")
 
-    # Lese Anzahl der Epochen aus der (hoffentlich aktualisierten) Konfiguration
+    # Lese Anzahl der Epochen aus der Konfiguration
     num_epochs = processor.config.get("training_epochs", 1)
     print(f"\nAnzahl der Trainingsepochen: {num_epochs}")
 
-    # 2. Verarbeite Trainingsdateien (Laden/Chunking) - nur einmal, wenn noch nicht geschehen
+    # 2. Verarbeite Trainingsdateien
     training_files = processor.config.get("training_files", [])
-    new_chunks_added_this_run = False
     if not training_files:
         print("\nWARNUNG: Keine Trainingsdateien in der Konfiguration gefunden ('training_files').")
     else:
-        print(f"\n--- Schritt 1: Prüfe/Lade Chunks aus {len(training_files)} Trainingsdatei(en) ---")
-        initial_chunk_count = len(processor.chunks)
-        for file_path in training_files:
-            processor.load_and_process_file(file_path)
-        if len(processor.chunks) > initial_chunk_count:
-            new_chunks_added_this_run = True
-            print(" -> Neue Chunks wurden hinzugefügt oder erstmalig geladen.")
+        print(f"\n--- Schritt 1: Verarbeite/Aktualisiere Chunks aus {len(training_files)} Trainingsdatei(en) ---")
+        files_processed_count = 0
+        file_iterator = tqdm(training_files, desc="Verarbeite Dateien", leave=False) if TQDM_AVAILABLE else training_files
+        for file_path in file_iterator:
+            if os.path.exists(file_path):
+                 try:
+                     processor.load_and_process_file(file_path) # Chunking & Processing
+                     files_processed_count += 1
+                 except Exception as load_err:
+                      print(f"FEHLER beim Verarbeiten von Datei '{file_path}': {load_err}")
+                      traceback.print_exc(limit=1)
+            else:
+                 print(f"WARNUNG: Trainingsdatei '{file_path}' nicht gefunden. Übersprungen.")
+
+        if files_processed_count > 0:
+            print(f" -> {files_processed_count} vorhandene Trainingsdateien verarbeitet/aktualisiert.")
         else:
-             print(" -> Keine neuen Chunks hinzugefügt (Dateien waren vermutlich schon bekannt).")
-
-        # Stelle sicher, dass der TF-IDF Index aktuell ist
-        # Überprüfung hinzugefügt, ob Vektorizer bereits existiert
-        if not hasattr(processor, 'vectorizer') or processor.vectorizer is None or new_chunks_added_this_run:
-             processor.update_tfidf_index()
-
+            print(" -> Keine vorhandenen Trainingsdateien gefunden oder verarbeitet.")
 
     # 3. Führe das eigentliche Training über Epochen durch
     if not processor.chunks:
         print("\nWARNUNG: Keine Chunks zum Trainieren vorhanden. Überspringe Epochen-Training.")
     else:
         all_chunk_ids = list(processor.chunks.keys())
-        print(f"\n--- Schritt 2: Beginne Training über {num_epochs} Epoche(n) für {len(all_chunk_ids)} Chunks ---")
-
+        print(f"\n--- Schritt 2: Beginne Epochen-Training über {num_epochs} Epoche(n) für {len(all_chunk_ids)} Chunks ---")
         for epoch in range(1, num_epochs + 1):
             print(f"\n🚀 Epoche {epoch}/{num_epochs}")
             random.shuffle(all_chunk_ids)
             epoch_chunk_iterator = tqdm(all_chunk_ids, desc=f"Epoch {epoch}", leave=False) if TQDM_AVAILABLE else all_chunk_ids
+            chunks_processed_in_epoch = 0
             for chunk_uuid in epoch_chunk_iterator:
                  if chunk_uuid in processor.chunks:
-                      processor.process_chunk(processor.chunks[chunk_uuid])
-
-            print(f"   -> Epoche {epoch} abgeschlossen.")
-            # Optional: Zwischenspeichern
-            # if epoch % 10 == 0 and epoch < num_epochs:
-            #    print(f"   -> Speichere Zwischenzustand nach Epoche {epoch}...")
-            #    processor.save_state(f"{state_path}.epoch{epoch}")
-
+                      try:
+                          processor.process_chunk(processor.chunks[chunk_uuid]) # Stärkt Verbindungen
+                          chunks_processed_in_epoch += 1
+                      except Exception as process_err:
+                           print(f"FEHLER beim Verarbeiten von Chunk UUID {chunk_uuid}: {process_err}")
+                           traceback.print_exc(limit=1)
+            print(f"   -> Epoche {epoch} abgeschlossen ({chunks_processed_in_epoch} Chunks verarbeitet).")
 
     # 4. (Optional) Führe Netzwerk-Simulationsschritte nach dem Training durch
     simulation_steps = processor.config.get("simulation_steps_after_training", 0)
@@ -170,33 +154,60 @@ def train_hybrid_model(config_path: str, state_path: str, force_rebuild: bool = 
         print(f"\n--- Schritt 3: Führe {simulation_steps} Netzwerk-Simulationsschritte durch ---")
         sim_iterator = tqdm(range(simulation_steps), desc="Simulationsschritte", leave=False) if TQDM_AVAILABLE else range(simulation_steps)
         for i in sim_iterator:
-             processor.simulate_network_step(decay_connections=True)
+             try:
+                 processor.simulate_network_step(decay_connections=True) # Mit Decay
+             except Exception as sim_err:
+                 print(f"FEHLER während Simulationsschritt {i+1}: {sim_err}")
+                 traceback.print_exc(limit=1); break # Breche Simulation ab bei Fehler
         print("--- Simulation abgeschlossen ---")
     elif simulation_steps > 0:
          print("\nWARNUNG: Simulation übersprungen, da keine Knoten im Netzwerk vorhanden sind.")
+    else:
+         print("\nINFO: Keine Simulationsschritte nach dem Training konfiguriert (simulation_steps_after_training = 0).")
 
-    # Berechne finale Aktivierungen vor Summary/Speichern
-    print("\n--- Berechne finale Knotenaktivierungen für Summary ---")
+    # Berechne finale Aktivierungen einmal ohne Decay vor dem Speichern/Summary
+    print("\n--- Berechne finale Knotenaktivierungen für Zustandsspeicherung/Summary ---")
     if processor.nodes:
-        processor.simulate_network_step(decay_connections=False)
+        try:
+            processor.simulate_network_step(decay_connections=False) # Ohne Decay
+        except Exception as final_sim_err:
+             print(f"FEHLER während finaler Aktivierungsberechnung: {final_sim_err}")
+             traceback.print_exc(limit=1)
     else:
         print("   -> Übersprungen, keine Knoten vorhanden.")
 
-    # 5. Speichere den finalen Zustand
+    # --- Reihenfolge: Erst Summary, dann Speichern ---
+
+    # Berechne die Summary zuerst (greift auf Live-Objekte zu)
+    final_summary = {}
+    print("\n--- Berechne finale Summary (aus In-Memory Zustand) ---")
+    try:
+        # Stelle sicher, dass die korrigierte Summary-Methode verwendet wird
+        final_summary = processor.get_network_state_summary()
+        print("   -> Summary erfolgreich berechnet.")
+    except Exception as summary_err:
+         print(f"FEHLER beim Erstellen der Netzwerk-Summary: {summary_err}")
+         traceback.print_exc(limit=1)
+
+    # Speichere den Zustand danach (ruft die korrigierte __getstate__ auf)
     print(f"\n--- Schritt 4: Speichere finalen Zustand nach '{state_path}' ---")
-    processor.save_state(state_path)
+    processor.save_state(state_path) # Verwendet die korrigierte __getstate__
+
+    # --- Ende Reihenfolge ---
 
     end_time = time.time()
     print("\n--- Zusammenfassung des Laufs ---")
     print(f" - Gesamtdauer: {end_time - start_time:.2f} Sekunden")
-    # Rufe Summary NACH dem Speichern auf (oder davor, sollte keinen Unterschied machen)
-    final_summary = processor.get_network_state_summary()
-    print(" - Finaler Netzwerkstatus:")
-    print(json.dumps(final_summary, indent=2, ensure_ascii=False))
+    print(" - Finaler Netzwerkstatus (aus In-Memory, VOR dem Speichern berechnet):")
+    if isinstance(final_summary, dict) and final_summary: # Prüfe ob Dict und nicht leer
+        print(json.dumps(final_summary, indent=2, ensure_ascii=False))
+    else:
+        print("Fehler: Konnte finale Summary nicht als Dictionary erstellen oder sie ist leer.")
     print("="*50)
     print(" Training/Datenverarbeitung beendet.")
     print("="*50)
 
+# --- Ende train_hybrid_model ---
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Trainiert das Quantum-Arona Hybrid LLM über mehrere Epochen.")
@@ -218,12 +229,20 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Stelle sicher, dass die Konfigurationsdatei existiert, bevor sie gelesen wird
+    # Stelle sicher, dass die Konfigurationsdatei existiert
     if not os.path.exists(args.config):
         print(f"FEHLER: Konfigurationsdatei nicht gefunden: {args.config}")
         sys.exit(1)
 
     print(f"INFO: Verwende Konfigurationsdatei: {args.config}")
     print(f"INFO: Verwende Zustandsdatei: {args.state}")
+    if args.force_rebuild:
+        print("INFO: Neuerstellung des Zustands ist erzwungen (--force-rebuild).")
 
-    train_hybrid_model(args.config, args.state, args.force_rebuild)
+    # Rufe die Haupt-Trainingsfunktion auf
+    try:
+        train_hybrid_model(args.config, args.state, args.force_rebuild)
+    except Exception as main_err:
+        print(f"\nFATALER FEHLER im Haupt-Trainingsprozess: {main_err}")
+        traceback.print_exc()
+        sys.exit(1)

@@ -1,24 +1,23 @@
 # -- coding: utf-8 --
 
 # Filename: qllm_streamlit_ui_hybrid.py
-# Description: Interaktives Interface für Quantum-Arona Hybrid LLM (RAG).
-# Version: 0.6 - Stabile Version mit RAG
-# Author: [CipherCore Technology] & Gemini & Your Input
+# Description: Interaktives Interface für Quantum-Arona Hybrid LLM (RAG) mit Self-Learning.
+# Version: 1.1 - Bugfix: Anzeige von Netzwerkverbindungen
+# Author: [CipherCore Technology] & Gemini & Your Input & History Maker
 
 import streamlit as st
 import json
 import os
 import sys
 import pandas as pd
-from collections import defaultdict
 import traceback
 import time
-from typing import List, Optional # Importiere List und Optional
 import numpy as np
+from collections import defaultdict, deque
+from typing import List, Optional
 
 # Füge das Verzeichnis hinzu, in dem sich quantum_arona_hybrid_llm.py befindet
-# Passe den Pfad ggf. an.
-# Beispiel: sys.path.append(os.path.abspath('../src'))
+# Annahme: Das Skript liegt im selben Verzeichnis
 try:
     from quantum_arona_hybrid_llm import QuantumEnhancedTextProcessor, TextChunk, Node
 except ImportError:
@@ -29,24 +28,32 @@ except ImportError:
     Stellen Sie sicher, dass:
     1. Die Datei `quantum_arona_hybrid_llm.py` existiert.
     2. Sie sich im selben Verzeichnis wie dieses Streamlit-Skript befindet ODER im Python-Pfad liegt.
-    """
+        """
     )
-    st.stop() # Beende die Ausführung, da die Kernkomponente fehlt
+    st.stop()
 
-# === Hilfsfunktionen ===
-# @st.cache_resource(ttl=3600) # Caching kann Probleme verursachen, wenn das Objekt intern verändert wird
+# === Hilfsfunktion für Verbindungsanzeige ===
+def show_connections_table(connections_data: List[dict[str, any]]) -> None:
+    """
+    Wandelt die Verbindungsdaten in einen Pandas DataFrame um
+    und zeigt ihn in Streamlit an. Wenn keine Daten vorhanden sind,
+    wird eine Info‑Meldung ausgegeben.
+    """
+    if connections_data:
+        df_connections = pd.DataFrame(connections_data)
+        st.dataframe(df_connections, use_container_width=True)
+    else:
+        st.info("Keine Verbindungen mit den aktuellen Filterkriterien gefunden.")
+
+# === Zustandslade-Funktion ===
 def load_processor_state(state_path: str) -> Optional[QuantumEnhancedTextProcessor]:
     """Lädt den Zustand des QuantumEnhancedTextProcessor."""
     if not os.path.exists(state_path):
         st.error(f"❌ Zustandsdatei nicht gefunden: `{state_path}`. Bitte zuerst das Trainingsskript (`qllm_train_hybrid.py`) ausführen.")
         return None
     try:
-        print(f"INFO: Versuche, Zustand aus '{state_path}' zu laden...") # Logging für Konsole
         processor = QuantumEnhancedTextProcessor.load_state(state_path)
         if processor:
-            # Erfolgsmeldung im UI statt nur in Konsole
-            # st.success(f"✅ Prozessor-Zustand erfolgreich aus `{state_path}` geladen.")
-            # Statusinfo wird jetzt in der Seitenleiste angezeigt
             return processor
         else:
             st.error(f"❌ Fehler beim Laden des Zustands aus `{state_path}`. Datei könnte korrupt oder leer sein.")
@@ -60,22 +67,17 @@ def load_processor_state(state_path: str) -> Optional[QuantumEnhancedTextProcess
 # === Streamlit GUI ===
 st.set_page_config(page_title="QAE RAG Explorer", layout="wide")
 st.title("🧠 Quantum-Augmented RAG Explorer")
-st.caption("Hybrides Quanten-Retrieval & Textgenerierungs-Interface")
+st.caption("Hybrides Quanten-Retrieval & Textgenerierungs-Interface mit Lernzyklus")
 
-# --- Initialisierung des Session State ---
-if 'processor' not in st.session_state:
-    st.session_state['processor'] = None
-if 'state_file_path' not in st.session_state:
-    st.session_state['state_file_path'] = "qetp_state.json"
-if 'last_retrieved_chunks' not in st.session_state:
-     st.session_state['last_retrieved_chunks'] = []
-if 'last_generated_response' not in st.session_state:
-     st.session_state['last_generated_response'] = None
-if 'last_prompt' not in st.session_state:
-     st.session_state['last_prompt'] = ""
+# --- Session State initialisieren ---
+if 'processor' not in st.session_state: st.session_state['processor'] = None
+if 'state_file_path' not in st.session_state: st.session_state['state_file_path'] = "qetp_state.json"
+if 'last_retrieved_chunks' not in st.session_state: st.session_state['last_retrieved_chunks'] = []
+if 'last_generated_response' not in st.session_state: st.session_state['last_generated_response'] = None
+if 'last_prompt' not in st.session_state: st.session_state['last_prompt'] = ""
+if 'show_debug_output' not in st.session_state: st.session_state['show_debug_output'] = False
 
-
-# === Seitenleiste: Laden und Steuerung ===
+# === Seitenleiste: Steuerung ===
 with st.sidebar:
     st.header("⚙️ Steuerung")
     current_state_path = st.text_input(
@@ -83,26 +85,20 @@ with st.sidebar:
         value=st.session_state['state_file_path'],
         key="state_path_input"
     )
-
-    # Button zum Laden des Zustands
-    if st.button("🔄 Zustand Laden/Aktualisieren", key="load_state_button", help="Lädt den Prozessorzustand aus der angegebenen Datei."):
+    if st.button("🔄 Zustand Laden/Aktualisieren", key="load_state_button"):
         with st.spinner(f"Lade Zustand aus `{current_state_path}`..."):
-            # Setze Prozessor zurück bevor neu geladen wird
             st.session_state['processor'] = None
             st.session_state['last_retrieved_chunks'] = []
             st.session_state['last_generated_response'] = None
-            # Lade den Zustand
             processor_instance = load_processor_state(current_state_path)
             if processor_instance:
                 st.session_state['processor'] = processor_instance
-                st.session_state['state_file_path'] = current_state_path # Pfad speichern bei Erfolg
+                st.session_state['state_file_path'] = current_state_path
                 st.success("Zustand erfolgreich geladen.")
-                st.rerun() # Neu laden, um Status zu aktualisieren
+                # Seite aktualisiert automatisch beim nächsten Laden()
             else:
-                 # Fehlermeldung wird bereits in load_processor_state angezeigt
-                 st.error("Laden fehlgeschlagen.")
+                st.error("Laden fehlgeschlagen.")
 
-    # Zeige Status nur an, wenn ein Prozessor geladen ist
     st.markdown("---")
     processor = st.session_state.get('processor')
     if processor is not None:
@@ -111,211 +107,136 @@ with st.sidebar:
             summary = processor.get_network_state_summary()
             st.json(summary, expanded=False)
             if not summary.get('rag_enabled'):
-                 st.warning("RAG (Textgenerierung) ist deaktiviert oder konnte nicht geladen werden.", icon="⚠️")
+                st.warning("RAG ist deaktiviert oder konnte nicht geladen werden.")
+            if summary.get('self_learning_enabled'):
+                st.info("Self-Learning ist aktiviert.")
+            else:
+                st.info("Self-Learning ist deaktiviert.")
 
-            # Optional: Button für Simulationsschritt
-            if st.button("➡️ Netzwerk-Schritt simulieren", help="Führt einen Simulationsschritt durch (Knotenaktivierung & Zerfall)."):
+            if st.button("➡️ Netzwerk-Schritt simulieren"):
                 with st.spinner("Simuliere Netzwerkaktivität..."):
                     processor.simulate_network_step(decay_connections=True)
                 st.success("Netzwerk-Schritt abgeschlossen.")
-                # Optional: Update der Summary nach Simulation erzwingen (kann aber langsam sein)
-                st.rerun()
+                # Seite aktualisiert automatisch beim nächsten Laden()
 
         except Exception as e:
             st.warning(f"Konnte Netzwerkinfo nicht abrufen: {e}")
+
+        st.markdown("---")
+        if st.button("💾 Zustand manuell speichern"):
+            with st.spinner("Speichere aktuellen Zustand..."):
+                processor.save_state(st.session_state['state_file_path'])
+            st.success("Zustand gespeichert.")
     else:
         st.info("ℹ️ Kein Prozessor-Zustand geladen.")
-        st.warning("Führen Sie zuerst das Trainingsskript (`qllm_train_hybrid.py`) aus, um eine Zustandsdatei zu erstellen, und laden Sie diese dann hier.")
+        st.warning("Führen Sie zuerst das Trainingsskript (`qllm_train_hybrid.py`) aus, um eine Zustandsdatei zu erstellen.")
 
-
-# === Hauptbereich: Prompt-Eingabe und Ergebnisse ===
+# === Hauptbereich: Prompt & Ergebnisse ===
+processor = st.session_state.get('processor')
 if processor is not None:
-
     st.header("💬 Prompt-Eingabe & Generierung")
-    # Verwende Session State, um den Prompt zwischen Läufen zu behalten
     prompt = st.text_area(
         "Geben Sie einen Prompt oder eine Frage ein:",
         height=100,
         key="prompt_input_main",
-        value=st.session_state.get("last_prompt","") # Lade letzten Prompt
-        )
+        value=st.session_state.get("last_prompt", "")
+    )
 
-    # Button zum Generieren der Antwort
-    if st.button("🚀 Antwort generieren", key="generate_button", disabled=(not processor.rag_enabled or not prompt)):
-
-        # Speichere den aktuellen Prompt
-        st.session_state["last_prompt"] = prompt
-
-        # Setze vorherige Ergebnisse zurück
+    generate_disabled = not processor.rag_enabled or not prompt
+    if st.button("🚀 Antwort generieren", key="generate_button", disabled=generate_disabled):
+        st.session_state['last_prompt'] = prompt
         st.session_state['last_retrieved_chunks'] = []
         st.session_state['last_generated_response'] = None
 
         if processor.rag_enabled and prompt:
             start_process_time = time.time()
-            with st.spinner("🧠 Generiere Antwort (Retrieval + Generation)..."):
+            success_flag = False
+            with st.spinner("🧠 Generiere Antwort..."):
                 try:
-                    # Rufe generate_response auf - diese ruft intern respond_to_prompt
                     generated_response = processor.generate_response(prompt)
                     st.session_state['last_generated_response'] = generated_response
+                    is_valid = (generated_response and
+                                not generated_response.startswith("[Fehler") and
+                                not generated_response.startswith("[Antwort blockiert"))
+                    if is_valid:
+                        success_flag = True
 
-                    # Workaround: Rufe respond_to_prompt nochmal auf für die Anzeige der Chunks
                     st.session_state['last_retrieved_chunks'] = processor.respond_to_prompt(prompt)
+                    st.success(f"Antwort generiert in {time.time() - start_process_time:.2f}s")
 
-                    end_process_time = time.time()
-                    st.success(f"Antwort generiert in {end_process_time - start_process_time:.2f}s")
-
+                    if processor.self_learning_enabled and success_flag:
+                        with st.spinner("💾 Speichere Zustand nach Lernzyklus..."):
+                            processor.save_state(st.session_state['state_file_path'])
+                        st.success("Zustand nach Lernzyklus gespeichert.")
                 except Exception as e:
                     st.error(f"Fehler bei der Verarbeitung des Prompts: {e}")
                     st.error("Traceback:")
                     st.code(traceback.format_exc())
-                    st.session_state['last_retrieved_chunks'] = []
                     st.session_state['last_generated_response'] = "Fehler bei der Generierung."
-
         elif not processor.rag_enabled:
-             st.error("Textgenerierung (RAG) ist nicht aktiviert. Nur Retrieval möglich.")
-             with st.spinner("Suche relevante Textstellen (Retrieval)..."):
-                 retrieved_chunks = processor.respond_to_prompt(prompt)
-                 st.session_state['last_retrieved_chunks'] = retrieved_chunks
+            st.error("Textgenerierung ist nicht aktiviert. Nur Retrieval möglich.")
+            st.session_state['last_retrieved_chunks'] = processor.respond_to_prompt(prompt)
 
-        # Force rerun, um die Ergebnisse anzuzeigen (alternativ Callback nutzen)
-        st.rerun()
+        # Seite aktualisiert automatisch beim nächsten Laden()
 
-    # --- Anzeige der Ergebnisse (aus Session State) ---
     if st.session_state.get('last_generated_response') is not None:
-         st.markdown("---")
-         st.subheader("💡 Generierte Antwort")
-         st.markdown(st.session_state['last_generated_response'])
+        st.markdown("---")
+        st.subheader("💡 Generierte Antwort")
+        st.markdown(st.session_state['last_generated_response'])
 
-    retrieved_chunks_to_show = st.session_state.get('last_retrieved_chunks', [])
-    if retrieved_chunks_to_show:
-         st.markdown("---")
-         with st.expander(f"Kontext: {len(retrieved_chunks_to_show)} abgerufene(r) Textabschnitt(e)", expanded=False):
-              for i, chunk in enumerate(retrieved_chunks_to_show):
-                  st.markdown(f"**[{i+1}] Quelle:** `{chunk.source}` (Abschnitt: `{chunk.index}`)")
-                  if chunk.activated_node_labels:
-                      nodes_str = ", ".join([f"`{label}`" for label in chunk.activated_node_labels])
-                      st.markdown(f"**Zugeordnete Knoten:** {nodes_str}")
-                  # Sicherer Textzugriff
-                  chunk_text = getattr(chunk, 'text', '*Text nicht verfügbar*')
-                  st.markdown(f"> {chunk_text}")
-                  if i < len(retrieved_chunks_to_show) - 1:
-                       st.markdown("---") # Trennlinie zwischen Chunks
+    retrieved = st.session_state.get('last_retrieved_chunks', [])
+    if retrieved:
+        st.markdown("---")
+        with st.expander(f"Kontext: {len(retrieved)} abgerufene Textabschnitte"):
+            for i, chunk in enumerate(retrieved):
+                st.markdown(f"**[{i+1}] Quelle:** `{chunk.source}` (Abschnitt: `{chunk.index}`)")
+                if hasattr(chunk, 'activated_node_labels') and chunk.activated_node_labels:
+                    nodes_str = ", ".join(f"`{lbl}`" for lbl in chunk.activated_node_labels)
+                    st.markdown(f"**Zugeordnete Knoten:** {nodes_str}")
+                st.markdown(f"> {chunk.text}")
+                if i < len(retrieved)-1:
+                    st.markdown("---")
 
-    # --- (Optional: Netzwerkverbindungen anzeigen - Mit Debugging) ---
     st.markdown("---")
-    if st.checkbox("📊 Zeige Netzwerkverbindungen (Top 50)", key="show_connections", value=False):
+    st.session_state['show_debug_output'] = st.checkbox("🐞 Debug-Ausgaben für Verbindungen in Konsole", key="debug_checkbox")
+
+    if st.checkbox("📊 Zeige Netzwerkverbindungen (Top 50)", key="show_connections"):
         st.subheader("🕸️ Gelernte Verbindungen zwischen Knoten")
         connections_data = []
-        # Sicherstellen, dass processor und nodes existieren
-        if processor and hasattr(processor, 'nodes'):
-            min_weight_threshold = st.slider("Mindestgewicht anzeigen", 0.0, 1.0, 0.1, 0.01, key="weight_slider")
-            # st.info("ℹ️ Debug-Informationen werden in der Konsole ausgegeben, in der Streamlit gestartet wurde.") # Hinweis für den Benutzer
-            try:
-                print("\n--- DEBUGGING START: Netzwerkverbindungsanzeige ---") # Konsolen-Marker
-                processed_conns = 0
-                displayed_conns = 0
+        processor_ui = processor
+        if processor_ui and hasattr(processor_ui, 'nodes'):
+            min_thr = st.slider("Mindestgewicht anzeigen", 0.0, 1.0, 0.1, 0.01)
+            if st.session_state['show_debug_output']:
+                print("\n--- DEBUG: Netzwerkverbindungsanzeige (Streamlit) ---")
 
-                for node in processor.nodes.values():
-                    if not hasattr(node, 'connections') or not isinstance(node.connections, dict):
-                        print(f"DEBUG Streamlit: Node '{node.label}' hat keine Connections oder ist kein Dict.")
-                        continue
+            # UUID→Node Map für Lookup
+            node_uuid_map = {n.uuid: n for n in processor_ui.nodes.values()}
+            processed_conns = displayed_conns = 0
 
-                    if not node.connections:
-                        # print(f"DEBUG Streamlit: Node '{node.label}' hat leere Connections.") # Optional: Weniger verbose
-                        continue
-
-                    print(f"DEBUG Streamlit: Prüfe Node '{node.label}' mit {len(node.connections)} potenziellen Verbindungen.")
-                    for target_uuid, conn in node.connections.items():
-                        processed_conns += 1
-                        if conn is None:
-                            print(f"DEBUG Streamlit:  Skipping None connection entry for target UUID '{target_uuid}' from node '{node.label}'.")
-                            continue # Überspringe falls None
-
-                        target_node_obj = getattr(conn, 'target_node', None)
-                        weight = getattr(conn, 'weight', None)
-                        conn_type = getattr(conn, 'conn_type', 'N/A')
-                        target_label = getattr(target_node_obj, 'label', 'N/A') # Sicherer Label-Zugriff
-
-                        # --- DEBUGGING AUSGABEN HINZUGEFÜGT ---
-                        print(f"\nDEBUG Streamlit: Checking conn from '{node.label}' to UUID '{target_uuid}'.")
-                        print(f"  - Connection Object: {conn}") # Verwendet __repr__ von Connection
-                        print(f"  - Target Node Object (via getattr): {target_node_obj}")
-                        print(f"  - Target Node Label: {target_label}")
-                        print(f"  - Weight (via getattr): {weight} (Type: {type(weight)})")
-                        print(f"  - Connection Type: {conn_type}")
-
-                        # Werte für die Bedingungsprüfung
-                        cond_target_node_exists = target_node_obj is not None
-                        cond_target_has_label = hasattr(target_node_obj, 'label')
-                        cond_weight_exists = weight is not None
-                        cond_weight_is_number = isinstance(weight, (float, np.number))
-                        cond_weight_is_finite = False # Default
-                        cond_weight_meets_threshold = False # Default
-
-                        if cond_weight_is_number:
-                            cond_weight_is_finite = np.isfinite(weight)
-                            if cond_weight_is_finite:
-                                cond_weight_meets_threshold = weight >= min_weight_threshold
-
-                        # Gesamte Filterbedingung
-                        filter_condition_met = (cond_target_node_exists and cond_target_has_label and
-                                                cond_weight_exists and cond_weight_is_number and
-                                                cond_weight_is_finite and cond_weight_meets_threshold)
-
-                        print(f"  - Checks:")
-                        print(f"    - Target Node Exists? {cond_target_node_exists}")
-                        print(f"    - Target Has Label?   {cond_target_has_label}")
-                        print(f"    - Weight Exists?      {cond_weight_exists}")
-                        print(f"    - Weight Is Number?   {cond_weight_is_number}")
-                        if cond_weight_is_number: # Nur drucken, wenn relevant
-                             print(f"    - Weight Is Finite?   {cond_weight_is_finite}")
-                             if cond_weight_is_finite:
-                                 print(f"    - Weight >= Threshold ({min_weight_threshold:.2f})? {cond_weight_meets_threshold} ({weight:.3f})")
-                        print(f"  - Filter condition met? {filter_condition_met}")
-                        # --- ENDE DEBUGGING AUSGABEN ---
-
-                        if filter_condition_met:
-                             displayed_conns += 1
-                             connections_data.append({
-                                "Quelle": node.label,
-                                "Ziel": target_label, # Sicher verwenden
-                                "Gewicht": weight,
-                                "Typ": conn_type
-                             })
-                        # else: # Optional: Grund für Ablehnung ausgeben
-                        #    print(f"  - Reason for rejection: Filter condition not met.")
-
-
-                print(f"\n--- DEBUGGING ENDE: Netzwerkverbindungsanzeige ---")
-                print(f"Total connections checked in processor: {processed_conns}")
-                print(f"Connections meeting filter criteria: {displayed_conns}")
-                # --- Ende Debug-Zusammenfassung ---
-
-                if connections_data:
-                    connections_data.sort(key=lambda x: x["Gewicht"], reverse=True)
-                    df_connections = pd.DataFrame(connections_data[:50])
-                    # Sicherstellen, dass die Gewicht-Spalte existiert, bevor sie gerundet wird
-                    if "Gewicht" in df_connections.columns:
-                        df_connections["Gewicht"] = df_connections["Gewicht"].round(3)
-                    st.dataframe(df_connections, use_container_width=True)
-                    if len(connections_data) > 50:
-                        st.caption(f"Zeige die Top 50 von {len(connections_data)} Verbindungen über dem Schwellwert.")
-                else:
-                    # Diese Meldung wird nun nur angezeigt, wenn nach dem Debugging keine Verbindungen übrig bleiben
-                    st.info(f"Keine Verbindungen mit Gewicht ≥ {min_weight_threshold:.2f} gefunden (oder Filterkriterien nicht erfüllt).")
-
-            except Exception as e:
-                st.error(f"Fehler beim Anzeigen der Verbindungen: {e}")
-                st.error("Traceback:")
-                st.code(traceback.format_exc()) # Mehr Details im Fehlerfall
+            for node in processor_ui.nodes.values():
+                if not isinstance(getattr(node, 'connections', None), dict): continue
+                for tgt_uuid, conn in node.connections.items():
+                    processed_conns += 1
+                    if conn is None: continue
+                    target_node = node_uuid_map.get(conn.target_node_uuid)
+                    weight = getattr(conn, 'weight', None)
+                    conn_type = getattr(conn, 'conn_type', 'N/A')
+                    if (target_node and isinstance(weight, (float, np.number)) and
+                        np.isfinite(weight) and weight >= min_thr):
+                        displayed_conns += 1
+                        connections_data.append({
+                            "Quelle": node.label,
+                            "Ziel": target_node.label,
+                            "Gewicht": weight,
+                            "Typ": conn_type
+                        })
+            # Tabelle anzeigen
+            show_connections_table(connections_data)
         else:
-             st.warning("Prozessor oder Knoten nicht verfügbar für Verbindungsanzeige.")
-
-
+            st.warning("Prozessor oder Knoten nicht verfügbar für Verbindungsanzeige.")
 else:
-    # Diese Nachricht wird angezeigt, wenn kein Prozessor geladen ist
     st.info("ℹ️ Bitte laden Sie zuerst einen Prozessor-Zustand über die Seitenleiste.")
 
 # --- Footer ---
 st.sidebar.markdown("---")
-st.sidebar.caption("Quantum-Arona RAG Interface v0.6")
+st.sidebar.caption("Quantum-Arona RAG Interface v1.1")
