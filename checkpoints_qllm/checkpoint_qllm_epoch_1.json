@@ -1,0 +1,32 @@
+{
+  "version": "qllm_checkpoint_v1",
+  "hebb_weights": {
+    "Technologie": {
+      "Bewusstsein": 79.99999999999973,
+      "Philosophie": 25.200000000000088,
+      "Ethik": 1.2
+    },
+    "Bewusstsein": {
+      "Technologie": 79.99999999999973,
+      "Philosophie": 412.4000000000253,
+      "Ethik": 5.999999999999995
+    },
+    "Philosophie": {
+      "Bewusstsein": 412.4000000000253,
+      "Ethik": 2.0000000000000004,
+      "Technologie": 25.200000000000088
+    },
+    "Ethik": {
+      "Philosophie": 2.0000000000000004,
+      "Bewusstsein": 5.999999999999995,
+      "Technologie": 1.2
+    }
+  },
+  "chunk_stats": {
+    "total_chunks": 4342,
+    "sample_nodes": [
+      "Technologie",
+      "Bewusstsein"
+    ]
+  }
+}
