@@ -1,5 +1,5 @@
 {
-  "version": "qllm_v1.5_rag_gemini_selflearn_config",
+  "version": "qllm_v1.6_rag_gemini_selflearn_limbus_config",
   "embedding_dim": 512,
   "chunk_size": 2000,
   "chunk_overlap": 100,
@@ -8,18 +8,51 @@
     "./training_data/ethics_ai.md",
     "./training_data/philosophy_basics.txt",
     "./training_data/frankenstein_tagged.md",
-	"./training_data/books_markdown/frankenstein.md",
-	"./training_data/books_markdown/platon_dialoge.md",
-	"./training_data/books_markdown/zarathustra.md",
-	"./training_data/books_markdown_de/platon_dialoge.md",
-	"./training_data/books_markdown_de/zarathustra.md",
-	"./training_data/learn.txt"  
+    "./training_data/books_markdown/frankenstein.md",
+    "./training_data/books_markdown/platon_dialoge.md",
+    "./training_data/books_markdown/zarathustra.md",
+    "./training_data/books_markdown_de/platon_dialoge.md",
+    "./training_data/books_markdown_de/zarathustra.md",
+    "./training_data/learn.txt"
   ],
   "semantic_nodes": {
-    "Ethik": ["Verantwortung", "Moral", "Pflicht", "gerecht", "Fairness", "Werte"],
-    "Philosophie": ["Sinn", "Denken", "Wahrheit", "Erkenntnis", "Sein", "Geist", "Materie"],
-    "Technologie": ["Algorithmus", "KI", "AI", "Daten", "System", "Automatisierung", "Code", "Software"],
-    "Bewusstsein": ["Ich", "Empfindung", "Selbst", "Wahrnehmung", "Gedanken", "subjektiv", "Erleben", "Qualia"]
+    "Ethik": [
+      "Verantwortung",
+      "Moral",
+      "Pflicht",
+      "gerecht",
+      "Fairness",
+      "Werte"
+    ],
+    "Philosophie": [
+      "Sinn",
+      "Denken",
+      "Wahrheit",
+      "Erkenntnis",
+      "Sein",
+      "Geist",
+      "Materie"
+    ],
+    "Technologie": [
+      "Algorithmus",
+      "KI",
+      "AI",
+      "Daten",
+      "System",
+      "Automatisierung",
+      "Code",
+      "Software"
+    ],
+    "Bewusstsein": [
+      "Ich",
+      "Empfindung",
+      "Selbst",
+      "Wahrnehmung",
+      "Gedanken",
+      "subjektiv",
+      "Erleben",
+      "Qualia"
+    ]
   },
   "connection_learning_rate": 0.05,
   "connection_decay_rate": 0.001,
@@ -32,15 +65,18 @@
   "simulation_n_shots": 50,
   "simulation_steps_after_training": 1,
   "enable_rag": true,
-  "generator_model_name": "models/gemini-2.0-flash", 
+  "generator_model_name": "models/gemini-2.0-flash",
   "generator_max_length": 8192,
   "generator_temperature": 0.7,
-
   "quantum_effect_variance_penalty": 0.5,
   "quantum_effect_activation_boost": 0.3,
   "quantum_effect_jump_llm_trigger": true,
-
   "enable_self_learning": true,
-  "self_learning_file_path": "./training_data/learn.txt", 
-  "self_learning_source_name": "Generated Responses" 
+  "self_learning_file_path": "./training_data/learn.txt",
+  "self_learning_source_name": "Generated Responses",
+  "limbus_num_qubits": 4,
+  "limbus_emotion_decay": 0.95,
+  "limbus_arousal_sensitivity": 1.5,
+  "limbus_pleasure_sensitivity": 1.0,
+  "limbus_dominance_sensitivity": 1.0
 }
