@@ -2,7 +2,7 @@
 
 # Filename: qllm_streamlit_ui_hybrid.py
 # Description: Interaktives Interface für Quantum-Arona Hybrid LLM (RAG) mit Self-Learning.
-# Version: 1.1 - Bugfix: Anzeige von Netzwerkverbindungen
+# Version: 1.1 - Bugfix: Anzeige von Netzwerkverbindungen und UI-Erweiterungen
 # Author: [CipherCore Technology] & Gemini & Your Input & History Maker
 
 import streamlit as st
@@ -95,7 +95,6 @@ with st.sidebar:
                 st.session_state['processor'] = processor_instance
                 st.session_state['state_file_path'] = current_state_path
                 st.success("Zustand erfolgreich geladen.")
-                # Seite aktualisiert automatisch beim nächsten Laden()
             else:
                 st.error("Laden fehlgeschlagen.")
 
@@ -117,7 +116,6 @@ with st.sidebar:
                 with st.spinner("Simuliere Netzwerkaktivität..."):
                     processor.simulate_network_step(decay_connections=True)
                 st.success("Netzwerk-Schritt abgeschlossen.")
-                # Seite aktualisiert automatisch beim nächsten Laden()
 
         except Exception as e:
             st.warning(f"Konnte Netzwerkinfo nicht abrufen: {e}")
@@ -127,6 +125,45 @@ with st.sidebar:
             with st.spinner("Speichere aktuellen Zustand..."):
                 processor.save_state(st.session_state['state_file_path'])
             st.success("Zustand gespeichert.")
+
+        # === Neue UI‑Erweiterungen ===
+        st.markdown("---")
+        st.subheader("⚙️ Parameter & Metriken")
+
+        # 1. n_shots-Slider
+        n_shots = st.slider(
+            "Anzahl der Messdurchläufe (n_shots)",
+            min_value=1,
+            max_value=200,
+            value=processor.config.get("simulation_n_shots", 50),
+            step=1
+        )
+        processor.config["simulation_n_shots"] = n_shots
+
+        # 2. Durchschnittsaktivierung
+        activations = [
+            n.activation for n in processor.nodes.values()
+            if isinstance(n.activation, (float, np.number))
+        ]
+        if activations:
+            avg_act = sum(activations) / len(activations)
+            st.metric("Ø Knoten-Aktivierung", f"{avg_act:.3f}")
+            st.bar_chart(
+                pd.DataFrame({"Aktivierung": activations}, index=[n.label for n in processor.nodes.values()])
+            )
+
+        # 3. Verbindungsgewicht-Verteilung
+        weights = [
+            conn.weight
+            for n in processor.nodes.values()
+            for conn in (n.connections or {}).values()
+            if hasattr(conn, 'weight') and isinstance(conn.weight, (float, np.number))
+        ]
+        if weights:
+            st.caption("Verteilungsdiagramm der Verbindungsgewichte")
+            st.bar_chart(pd.DataFrame({"Gewicht": weights}))
+        # === Ende UI‑Erweiterungen ===
+
     else:
         st.info("ℹ️ Kein Prozessor-Zustand geladen.")
         st.warning("Führen Sie zuerst das Trainingsskript (`qllm_train_hybrid.py`) aus, um eine Zustandsdatei zu erstellen.")
@@ -176,8 +213,6 @@ if processor is not None:
         elif not processor.rag_enabled:
             st.error("Textgenerierung ist nicht aktiviert. Nur Retrieval möglich.")
             st.session_state['last_retrieved_chunks'] = processor.respond_to_prompt(prompt)
-
-        # Seite aktualisiert automatisch beim nächsten Laden()
 
     if st.session_state.get('last_generated_response') is not None:
         st.markdown("---")
