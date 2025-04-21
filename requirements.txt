@@ -1,0 +1,8 @@
+numpy
+scikit-learn
+google-generativeai
+streamlit
+pandas
+tqdm
+networkx
+google-api-core 
