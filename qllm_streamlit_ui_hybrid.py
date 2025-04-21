@@ -1,8 +1,7 @@
 # -- coding: utf-8 --
 
 # Filename: qllm_streamlit_ui_hybrid.py
-# Description: Interaktives Interface für Quantum-Arona Hybrid LLM (RAG) mit Self-Learning.
-# Version: 1.2 - Integrated LimbusAffektus Display
+# Version: 1.3 - Integrated LimbusAffektus Display & Parameters
 # Author: [CipherCore Technology] & Gemini & Your Input & History Maker
 
 import streamlit as st
@@ -14,18 +13,18 @@ import traceback
 import time
 import numpy as np
 from collections import defaultdict, deque
-from typing import List, Optional, Dict, Any # Ergänzt Dict, Any
+from typing import List, Optional, Dict, Any
 
-# Füge das Verzeichnis hinzu, in dem sich quantum_arona_hybrid_llm.py befindet
+# Add directory containing quantum_arona_hybrid_llm.py if necessary
 try:
-    # Importiere alle benötigten Klassen
+    # Import required classes
     from quantum_arona_hybrid_llm import (
         QuantumEnhancedTextProcessor,
         TextChunk,
         Node,
-        LimbusAffektus, # Importiere LimbusAffektus
-        Connection,     # Importiere Connection (wird intern verwendet)
-        QuantumNodeSystem # Importiere QNS (wird intern verwendet)
+        LimbusAffektus, # LimbusAffektus node class
+        Connection,     # Used internally by processor
+        QuantumNodeSystem # Used internally by processor
     )
 except ImportError:
     st.error(
@@ -39,72 +38,89 @@ except ImportError:
     )
     st.stop()
 
-# === Hilfsfunktion für Verbindungsanzeige ===
+# === Helper function for connection display ===
 def show_connections_table(connections_data: List[Dict[str, Any]]) -> None:
-    """Zeigt Verbindungsdaten als Tabelle an."""
+    """Displays connection data in a table."""
     if connections_data:
         df_connections = pd.DataFrame(connections_data)
-        # Runde Gewicht für bessere Anzeige
+        # Round weight for better display
         if "Gewicht" in df_connections.columns:
              df_connections["Gewicht"] = df_connections["Gewicht"].round(4)
         st.dataframe(df_connections, use_container_width=True)
     else:
         st.info("Keine Verbindungen mit den aktuellen Filterkriterien gefunden.")
 
-# === Zustandslade-Funktion ===
+# In qllm_streamlit_ui_hybrid.py
+
 #@st.cache_resource(ttl=3600) # Caching kann bei Objektänderungen problematisch sein
 def load_processor_state(state_path: str) -> Optional[QuantumEnhancedTextProcessor]:
     """Lädt den Zustand des QuantumEnhancedTextProcessor."""
+    print(f"DEBUG: Attempting to load state from {state_path}") # Debug Print 1
     if not os.path.exists(state_path):
         st.error(f"❌ Zustandsdatei nicht gefunden: `{state_path}`.")
+        print(f"DEBUG: State file not found: {state_path}") # Debug Print 2
         return None
     try:
-        # print(f"DEBUG: Attempting to load state from {state_path}")
         processor = QuantumEnhancedTextProcessor.load_state(state_path)
         if processor:
-            # print(f"DEBUG: State loaded successfully, Processor ID: {id(processor)}")
+            print(f"DEBUG: State loaded successfully. Processor ID: {id(processor)}") # Debug Print 3
+            # Prüfe den rag_enabled Status direkt nach dem Laden
+            print(f"DEBUG: Processor rag_enabled immediately after load_state: {getattr(processor, 'rag_enabled', 'Attribute Missing')}") # Debug Print 4
+            print(f"DEBUG: Processor config['enable_rag'] after load_state: {processor.config.get('enable_rag', 'Key Missing')}") # Debug Print 5
+            # -- ENTFERNT: Redundante Parameter-Updates nach dem Laden --
+            # # Update RAG status based on loaded config and SDK availability
+            # processor.rag_enabled = processor.config.get("enable_rag", False) and 'GEMINI_AVAILABLE' in globals() and GEMINI_AVAILABLE
+            # # Update Limbus parameters from the potentially newer config file used during load
+            # limbus_node = processor.nodes.get("Limbus Affektus")
+            # if isinstance(limbus_node, LimbusAffektus):
+            #     limbus_node.config = processor.config # Ensure reference is correct
+            #     limbus_node.decay = processor.config.get("limbus_emotion_decay", 0.95)
+            #     limbus_node.arousal_sens = processor.config.get("limbus_arousal_sensitivity", 1.5)
+            #     limbus_node.pleasure_sens = processor.config.get("limbus_pleasure_sensitivity", 1.0)
+            #     limbus_node.dominance_sens = processor.config.get("limbus_dominance_sensitivity", 1.0)
+            # --- Ende ENTFERNT ---
             return processor
         else:
             st.error(f"❌ Fehler beim Laden des Zustands aus `{state_path}`.")
+            print(f"DEBUG: QuantumEnhancedTextProcessor.load_state returned None for {state_path}") # Debug Print 6
             return None
     except Exception as e:
         st.error(f"❌ Unerwarteter Fehler beim Laden des Zustands: {e}")
         st.error("Traceback:")
         st.code(traceback.format_exc())
+        print(f"DEBUG: Exception during load_processor_state: {e}") # Debug Print 7
         return None
 
-# === Streamlit GUI ===
+# === Streamlit GUI Setup ===
 st.set_page_config(page_title="QAE RAG Explorer", layout="wide")
 
 # --- Header ---
 col1_title, col2_title = st.columns([1, 6])
 with col1_title:
-     # Optional: Logo oder Icon hier
-     # st.image("path/to/your/logo.png", width=80)
-     st.markdown("🧠", unsafe_allow_html=True) # Emoji als einfacher Platzhalter
+     # st.image("path/to/your/logo.png", width=80) # Placeholder for logo
+     st.markdown("🧠", unsafe_allow_html=True) # Simple emoji placeholder
 with col2_title:
      st.title("Quantum-Augmented RAG Explorer")
      st.caption("Hybrides Quanten-Retrieval & Textgenerierungs-Interface mit Lernzyklus")
 
-# --- Initialisierung des Session State ---
+# --- Session State Initialization ---
 if 'processor' not in st.session_state: st.session_state['processor'] = None
 if 'state_file_path' not in st.session_state: st.session_state['state_file_path'] = "qetp_state.json"
 if 'last_retrieved_chunks' not in st.session_state: st.session_state['last_retrieved_chunks'] = []
 if 'last_generated_response' not in st.session_state: st.session_state['last_generated_response'] = None
 if 'last_prompt' not in st.session_state: st.session_state['last_prompt'] = ""
-# Debug-Checkbox wird direkt im UI gesetzt/abgefragt
+# Debug checkbox is handled directly in the UI
 
-# --- Lade initialen Zustand, wenn noch nicht vorhanden ---
+# --- Initial State Load if not already loaded ---
 if st.session_state.processor is None:
-    # print("DEBUG: Initial processor load attempt.")
     st.session_state.processor = load_processor_state(st.session_state.state_file_path)
-    # Kein st.rerun() hier, um Endlosschleife bei Ladefehler zu vermeiden
+    # No st.rerun() here to avoid infinite loop on load error
 
-# === Seitenleiste: Steuerung & Infos ===
+# === Sidebar: Control & Info ===
 with st.sidebar:
     st.header("⚙️ Steuerung & Status")
 
-    # --- Zustand Laden/Speichern ---
+    # --- State Load/Save ---
     current_state_path = st.text_input(
         "Pfad zur Zustandsdatei",
         value=st.session_state['state_file_path'],
@@ -127,7 +143,7 @@ with st.sidebar:
                 else:
                     st.error("Laden fehlgeschlagen.")
 
-    # Zugriff auf den (potenziell neu geladenen) Prozessor
+    # Access the (potentially newly loaded) processor
     processor = st.session_state.get('processor')
 
     with col2_save:
@@ -142,11 +158,11 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # --- Netzwerk Status & Simulation ---
+    # --- Network Status & Simulation ---
     if processor is not None:
         st.subheader("📊 Netzwerk Übersicht")
         try:
-            # Hole aktuelle Summary Daten
+            # Get current summary data
             summary = processor.get_network_state_summary()
             col1_info, col2_info, col3_info = st.columns(3)
             with col1_info:
@@ -157,9 +173,9 @@ with st.sidebar:
                 st.metric("Chunks", summary.get('num_chunks', 0))
 
             with st.expander("Details anzeigen (JSON)", expanded=False):
-                st.json(summary) # Volle Summary im Expander
+                st.json(summary) # Full summary in expander
 
-            # Statusanzeigen
+            # Status indicators
             if not summary.get('rag_enabled'):
                 st.warning("RAG (Gemini) ist deaktiviert.", icon="⚠️")
             if summary.get('self_learning_enabled'):
@@ -167,22 +183,22 @@ with st.sidebar:
             else:
                 st.info("Self-Learning ist deaktiviert.", icon="❌")
 
-            # Simulations-Button
+            # Simulation Button
             if st.button("➡️ Schritt simulieren", key="simulate_button", help="Führt einen Simulationsschritt durch (Aktivierung, Decay, Emotion)."):
                 with st.spinner("Simuliere Netzwerk..."):
-                    processor.simulate_network_step(decay_connections=True)
+                    processor.simulate_network_step(decay_connections=True) # Simulate with decay
                 st.success("Simulationsschritt abgeschlossen.")
-                st.rerun() # Update UI nach Simulation
+                st.rerun() # Update UI after simulation
 
         except Exception as e:
             st.error(f"Fehler beim Abrufen der Netzwerkinfo: {e}")
 
-        # --- Parameter & Metriken ---
+        # --- Parameters & Metrics ---
         st.markdown("---")
         st.subheader("🔧 Parameter & Metriken")
 
-        with st.expander("Konfiguration anpassen", expanded=False):
-            # 1. n_shots-Slider
+        with st.expander("Konfiguration anpassen (Temporär)", expanded=False):
+            # 1. n_shots slider
             n_shots_val = processor.config.get("simulation_n_shots", 50)
             n_shots_new = st.slider(
                 "Quanten-Messungen (n_shots)", min_value=1, max_value=200, value=n_shots_val, step=1,
@@ -190,49 +206,84 @@ with st.sidebar:
             )
             if n_shots_new != n_shots_val:
                 processor.config["simulation_n_shots"] = n_shots_new
-                st.info(f"n_shots auf {n_shots_new} geändert (temporär). Zum Speichern '💾 Speichern' klicken.")
+                st.info(f"n_shots auf {n_shots_new} geändert. Zum Speichern '💾 Speichern' klicken.")
 
-            # Optional: Weitere Parameter hier hinzufügen (z.B. Decay Rate, Lernrate)
-            # decay_rate_val = processor.config.get("connection_decay_rate", 0.001)
-            # decay_rate_new = st.slider("Connection Decay Rate", 0.0, 0.1, decay_rate_val, 0.0001, format="%.4f")
-            # if decay_rate_new != decay_rate_val:
-            #     processor.config["connection_decay_rate"] = decay_rate_new
-            #     st.info(f"Decay Rate auf {decay_rate_new:.4f} geändert (temporär).")
+            # --- Limbus Influence Parameters ---
+            st.caption("Limbus Modulation (Retrieval)")
+            thr_arousal_val = processor.config.get("limbus_influence_threshold_arousal", -0.03)
+            thr_arousal_new = st.slider("Einfluss Arousal auf Threshold", -0.1, 0.1, thr_arousal_val, 0.005, format="%.3f")
+            if thr_arousal_new != thr_arousal_val:
+                processor.config["limbus_influence_threshold_arousal"] = thr_arousal_new
+                st.info(f"Threshold(Arousal) Faktor auf {thr_arousal_new:.3f} geändert.")
 
-        # --- Aktuelle Metriken anzeigen ---
+            thr_pleasure_val = processor.config.get("limbus_influence_threshold_pleasure", 0.03)
+            thr_pleasure_new = st.slider("Einfluss Pleasure auf Threshold", -0.1, 0.1, thr_pleasure_val, 0.005, format="%.3f")
+            if thr_pleasure_new != thr_pleasure_val:
+                processor.config["limbus_influence_threshold_pleasure"] = thr_pleasure_new
+                st.info(f"Threshold(Pleasure) Faktor auf {thr_pleasure_new:.3f} geändert.")
+
+            rank_bias_val = processor.config.get("limbus_influence_ranking_bias_pleasure", 0.02)
+            rank_bias_new = st.slider("Einfluss Pleasure auf Ranking Bias", -0.1, 0.1, rank_bias_val, 0.005, format="%.3f")
+            if rank_bias_new != rank_bias_val:
+                processor.config["limbus_influence_ranking_bias_pleasure"] = rank_bias_new
+                st.info(f"Ranking Bias(Pleasure) Faktor auf {rank_bias_new:.3f} geändert.")
+
+            st.caption("Limbus Modulation (LLM Temp)")
+            temp_arousal_val = processor.config.get("limbus_influence_temperature_arousal", 0.1)
+            temp_arousal_new = st.slider("Einfluss Arousal auf Temperatur", -0.5, 0.5, temp_arousal_val, 0.01, format="%.2f")
+            if temp_arousal_new != temp_arousal_val:
+                processor.config["limbus_influence_temperature_arousal"] = temp_arousal_new
+                st.info(f"Temperatur(Arousal) Faktor auf {temp_arousal_new:.2f} geändert.")
+
+            temp_dominance_val = processor.config.get("limbus_influence_temperature_dominance", -0.1)
+            temp_dominance_new = st.slider("Einfluss Dominance auf Temperatur", -0.5, 0.5, temp_dominance_val, 0.01, format="%.2f")
+            if temp_dominance_new != temp_dominance_val:
+                processor.config["limbus_influence_temperature_dominance"] = temp_dominance_new
+                st.info(f"Temperatur(Dominance) Faktor auf {temp_dominance_new:.2f} geändert.")
+
+            st.caption("Limbus Modulation (Lernrate)")
+            lr_mult_val = processor.config.get("limbus_influence_learning_rate_multiplier", 0.1)
+            lr_mult_new = st.slider("Einfluss (P+A)/2 auf Lernrate-Mult.", -0.5, 0.5, lr_mult_val, 0.01, format="%.2f")
+            if lr_mult_new != lr_mult_val:
+                processor.config["limbus_influence_learning_rate_multiplier"] = lr_mult_new
+                st.info(f"Lernraten-Mult.(P+A) Faktor auf {lr_mult_new:.2f} geändert.")
+
+
+        # --- Current Metrics Display ---
         st.caption("Aktueller Netzwerkzustand")
-        # Durchschnittsaktivierung
+        # Average activation
         activations = [getattr(n, 'activation', 0.0) for n in processor.nodes.values()]
         valid_activations = [a for a in activations if isinstance(a, (float, np.number)) and np.isfinite(a)]
         if valid_activations:
             avg_act = sum(valid_activations) / len(valid_activations)
             st.metric("Ø Knoten-Aktivierung", f"{avg_act:.4f}")
-            # Balkendiagramm für Einzelaktivierungen
+            # Bar chart for individual activations
             valid_labels = [n.label for n in processor.nodes.values() if isinstance(getattr(n, 'activation', None), (float, np.number)) and np.isfinite(getattr(n, 'activation', None))]
             if len(valid_labels) == len(valid_activations):
                  df_activations = pd.DataFrame({"Aktivierung": valid_activations}, index=valid_labels)
                  st.bar_chart(df_activations, height=150)
         else: st.info("Keine gültigen Aktivierungsdaten.")
 
-        # Limbus Affektus Zustand anzeigen (wenn vorhanden und korrekt implementiert)
+        # Limbus Affektus State Display (if node exists)
         limbus_node = processor.nodes.get("Limbus Affektus")
         if isinstance(limbus_node, LimbusAffektus):
              st.caption("Globaler emotionaler Zustand (PAD)")
              emotion_state = getattr(limbus_node, 'emotion_state', {})
              if emotion_state:
                   col_p, col_a, col_d = st.columns(3)
+                  # Display PAD values
                   with col_p: st.metric("Pleasure", f"{emotion_state.get('pleasure', 0.0):.3f}", delta=None)
                   with col_a: st.metric("Arousal", f"{emotion_state.get('arousal', 0.0):.3f}", delta=None)
                   with col_d: st.metric("Dominance", f"{emotion_state.get('dominance', 0.0):.3f}", delta=None)
              else: st.info("Emotionszustand nicht verfügbar.")
 
     else:
-        # Meldung, wenn kein Prozessor geladen ist
+        # Message when no processor is loaded
         st.info("ℹ️ Kein Prozessor-Zustand geladen.")
         st.warning("Bitte laden Sie eine Zustandsdatei oder führen Sie das Trainingsskript aus.")
 
-# === Hauptbereich: Prompt & Ergebnisse ===
-processor = st.session_state.get('processor') # Stelle sicher, dass wir die aktuellste Version haben
+# === Main Area: Prompt & Results ===
+processor = st.session_state.get('processor') # Ensure we use the current processor state
 if processor is not None:
     st.header("💬 Prompt & Antwort")
     prompt = st.text_area(
@@ -243,61 +294,55 @@ if processor is not None:
         help="Ihre Frage oder Ihr Thema für das RAG-System."
     )
 
-    # Button zum Generieren
+    # Generate Button
     generate_disabled = not processor.rag_enabled or not prompt.strip()
     if st.button("🚀 Antwort generieren", key="generate_button", disabled=generate_disabled, type="primary"):
-        st.session_state['last_prompt'] = prompt # Speichere aktuellen Prompt
+        st.session_state['last_prompt'] = prompt # Store current prompt
         st.session_state['last_retrieved_chunks'] = []
         st.session_state['last_generated_response'] = None
         st.rerun() # Force rerun to show spinner immediately
 
-    # Zeige Ergebnisse erst nach Button-Klick (oder wenn sie schon im State sind)
-    if st.session_state.last_prompt and st.session_state.last_generated_response is None: # Nur ausführen, wenn generiert werden soll
+    # --- Generation Logic (runs after button click or if response is pending) ---
+    if st.session_state.last_prompt and st.session_state.last_generated_response is None: # Only execute when generation is requested
         if processor.rag_enabled and st.session_state.last_prompt.strip():
             start_process_time = time.time()
             success_flag = False
             with st.spinner("🧠 Generiere Antwort (Retrieval + LLM)..."):
                 try:
-                    # Hole den letzten Prompt aus dem State
+                    # Get the last prompt from state
                     current_prompt = st.session_state.last_prompt
-                    # Führe Generierung durch
+                    # Perform generation (this now includes Limbus modulation)
                     generated_response = processor.generate_response(current_prompt)
-                    st.session_state['last_generated_response'] = generated_response # Speichere Ergebnis
-                    # Prüfe Gültigkeit
+                    st.session_state['last_generated_response'] = generated_response # Store result
+                    # Check validity
                     is_valid = (generated_response and
                                 not generated_response.startswith("[Fehler") and
                                 not generated_response.startswith("[Antwort blockiert"))
                     if is_valid: success_flag = True
 
-                    # Hole Kontext für Anzeige (redundant, aber einfacher für UI)
+                    # Get context for display (redundant call, but simpler for UI state)
                     st.session_state['last_retrieved_chunks'] = processor.respond_to_prompt(current_prompt)
                     st.success(f"Antwort generiert in {time.time() - start_process_time:.2f}s")
 
-                    # Speichere Zustand nach Self-Learning
-                    if processor.self_learning_enabled and success_flag:
-                        # Dieser Teil wird nun nach der Anzeige der Antwort ausgeführt,
-                        # da st.rerun() den Ablauf hier unterbricht.
-                        # Besser: Speichern als separaten Button anbieten oder im Hintergrund?
-                        # Fürs Erste lassen wir es hier, aber es wird erst nach dem nächsten rerun wirksam.
-                         with st.spinner("💾 Speichere Zustand nach Lernzyklus (im nächsten Schritt)..."):
-                              processor.save_state(st.session_state['state_file_path'])
-                         st.success("Zustand nach Lernzyklus gespeichert (wird nach Aktualisierung wirksam).")
+                    # Save state AFTER self-learning (if enabled and successful)
+                    # Note: Saving happens within generate_response during self-learning now.
+                    # We might still want a manual save button for the overall state.
 
                 except Exception as e:
                     st.error(f"Fehler bei der Verarbeitung des Prompts: {e}")
                     st.error("Traceback:")
                     st.code(traceback.format_exc())
                     st.session_state['last_generated_response'] = "[Fehler bei der Generierung]"
-            # Erneutes Rerun, um die Ergebnisse anzuzeigen
+            # Rerun again to display the results
             st.rerun()
 
         elif not processor.rag_enabled:
              st.error("Textgenerierung (RAG) ist nicht aktiviert.")
-             # Optional: Nur Retrieval durchführen und anzeigen
+             # Optionally perform and display only retrieval
              # st.session_state['last_retrieved_chunks'] = processor.respond_to_prompt(st.session_state.last_prompt)
              # st.rerun()
 
-    # --- Anzeige der Ergebnisse ---
+    # --- Results Display ---
     if st.session_state.get('last_generated_response'):
          st.markdown("---")
          st.subheader("💡 Generierte Antwort")
@@ -312,17 +357,17 @@ if processor is not None:
                   if hasattr(chunk, 'activated_node_labels') and chunk.activated_node_labels:
                       nodes_str = ", ".join(f"`{lbl}`" for lbl in chunk.activated_node_labels)
                       st.markdown(f"**Knoten:** {nodes_str}")
-                  st.markdown(f"> _{chunk.text[:300]}..._") # Gekürzter Text für Übersicht
+                  st.markdown(f"> _{chunk.text[:300]}..._") # Shortened text for overview
                   if st.button(f"Volltext {i+1}", key=f"chunk_text_{i}"):
                        st.markdown(chunk.text)
                   if i < len(retrieved_chunks) - 1:
                        st.markdown("---")
 
-    # --- Netzwerkverbindungen anzeigen ---
+    # --- Network Connection Display ---
     st.markdown("---")
     if st.checkbox("🕸️ Zeige Netzwerkverbindungen", key="show_connections_main", value=False):
         st.subheader("Gelernte Verbindungen (Top 50)")
-        processor_ui_main = st.session_state.get('processor') # Sicherstellen, dass der aktuelle Prozessor verwendet wird
+        processor_ui_main = st.session_state.get('processor') # Ensure current processor is used
         if processor_ui_main and hasattr(processor_ui_main, 'nodes'):
             min_weight_thr = st.slider("Mindestgewicht", 0.0, 1.0, 0.1, 0.01, key="weight_slider_main")
             connections_data = []
@@ -344,7 +389,7 @@ if processor is not None:
                             })
 
             connections_data.sort(key=lambda x: x["Gewicht"], reverse=True)
-            show_connections_table(connections_data[:50]) # Zeige Top 50
+            show_connections_table(connections_data[:50]) # Show top 50
             if len(connections_data) > 50:
                  st.caption(f"Zeige Top 50 von {len(connections_data)} Verbindungen ≥ {min_weight_thr:.2f}.")
 
@@ -352,9 +397,9 @@ if processor is not None:
             st.warning("Prozessor oder Knoten nicht verfügbar.")
 
 else:
-    # Nachricht, wenn kein Prozessor im Session State ist
+    # Message if no processor is in session state
     st.info("ℹ️ Bitte laden Sie einen Prozessor-Zustand über die Seitenleiste, um zu beginnen.")
 
 # --- Footer ---
 st.sidebar.markdown("---")
-st.sidebar.caption("QAE-SL Interface v1.2")
+st.sidebar.caption("QAE-SL Interface v1.3")

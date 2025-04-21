@@ -1,7 +1,7 @@
 # -- coding: utf-8 --
 
 # Filename: quantum_arona_hybrid_llm.py
-# Version: 1.1 - Implemented LimbusAffektus Node
+# Version: 1.2 - Implemented active LimbusAffektus modulation
 # Author: [CipherCore Technology] & Gemini & Your Input & History Maker
 
 import numpy as np
@@ -23,7 +23,7 @@ import re
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# --- NEU: Imports für Gemini API ---
+# --- Imports für Gemini API ---
 try:
     import google.generativeai as genai
     # Optional: Importiere Typen für Fehlerbehandlung
@@ -36,7 +36,7 @@ except ImportError:
     print("Installieren Sie es mit: pip install google-generativeai")
     genai = None
     GoogleAPIError = None
-# --- Ende NEU: Imports ---
+# --- Ende Imports ---
 
 # Optional: Netzwerk-Visualisierung
 try: import networkx as nx; NETWORKX_AVAILABLE = True
@@ -440,12 +440,12 @@ class Node:
              self.incoming_connections_info.append((source_uuid, source_label))
 
     def strengthen_connection(self, target_node: 'Node', learning_signal: float = 0.1, learning_rate: Optional[float] = None):
-        """Stärkt das Gewicht einer bestehenden Verbindung."""
+        """Stärkt das Gewicht einer bestehenden Verbindung mit einer gegebenen Lernrate."""
         if target_node is None or not hasattr(target_node, 'uuid'): return
         target_uuid = target_node.uuid
         connection = self.connections.get(target_uuid)
         if connection is not None:
-             # print(f"      Strengthening W:{connection.weight:.3f} for {self.label} -> {target_node.label} by {learning_signal}") # Optional Debug
+             # Die Lernrate wird hier DIREKT übergeben, nicht mehr der Klassen-Default
              connection.update_weight(delta_weight=learning_signal, learning_rate=learning_rate)
 
     def calculate_activation(self, n_shots: Optional[int] = None):
@@ -700,6 +700,7 @@ class LimbusAffektus(Node):
     """
     Modelliert den globalen emotionalen Zustand des Netzwerks (PAD-Modell).
     Aktualisiert seinen Zustand basierend auf der Netzwerkaktivität.
+    Beeinflusst aktiv andere Systemkomponenten (Modulation).
     """
     # Akzeptiere is_quantum als Argument, Default kann True bleiben
     def __init__(self, label: str = "Limbus Affektus", num_qubits: Optional[int] = None, is_quantum: bool = True, config: Optional[Dict] = None, **kwargs):
@@ -748,13 +749,21 @@ class LimbusAffektus(Node):
             if n.uuid != self.uuid and hasattr(n, 'activation') and isinstance(n.activation, (float, np.number)) and np.isfinite(n.activation)
         ]
         avg_activation = np.mean(other_node_activations) if other_node_activations else 0.0
-        arousal_update = (avg_activation * 2 - 1) * self.arousal_sens
-        pleasure_update = math.tanh(self.last_input_sum_for_pleasure * self.pleasure_sens)
-        dominance_update = (self.activation * 2 - 1) * self.dominance_sens
+        # Sensitivitäts-Faktoren aus Config lesen
+        arousal_sens = self.config.get("limbus_arousal_sensitivity", 1.5)
+        pleasure_sens = self.config.get("limbus_pleasure_sensitivity", 1.0)
+        dominance_sens = self.config.get("limbus_dominance_sensitivity", 1.0)
+        decay_rate = self.config.get("limbus_emotion_decay", 0.95)
 
-        self.emotion_state["pleasure"] = float(np.clip(self.emotion_state["pleasure"] * self.decay + pleasure_update, -1.0, 1.0))
-        self.emotion_state["arousal"] = float(np.clip(self.emotion_state["arousal"] * self.decay + arousal_update, -1.0, 1.0))
-        self.emotion_state["dominance"] = float(np.clip(self.emotion_state["dominance"] * self.decay + dominance_update, -1.0, 1.0))
+        # Update Berechnungen mit Sensitivität
+        arousal_update = (avg_activation * 2 - 1) * arousal_sens
+        pleasure_update = math.tanh(self.last_input_sum_for_pleasure * pleasure_sens)
+        dominance_update = (self.activation * 2 - 1) * dominance_sens
+
+        # Update PAD Werte mit Decay und Clipping
+        self.emotion_state["pleasure"] = float(np.clip(self.emotion_state["pleasure"] * decay_rate + pleasure_update, -1.0, 1.0))
+        self.emotion_state["arousal"] = float(np.clip(self.emotion_state["arousal"] * decay_rate + arousal_update, -1.0, 1.0))
+        self.emotion_state["dominance"] = float(np.clip(self.emotion_state["dominance"] * decay_rate + dominance_update, -1.0, 1.0))
 
     # __getstate__ und __setstate__ wurden angepasst, um emotion_state zu behandeln
     # (siehe oben in der Node-Klasse, da sie von Node erbt und die Logik dort integriert ist)
@@ -777,7 +786,7 @@ class TextChunk:
 
 # --- HAUPTPROZESSOR-KLASSE ---
 class QuantumEnhancedTextProcessor:
-    """Orchestriert Laden, Quantenknoten, Lernen und RAG."""
+    """Orchestriert Laden, Quantenknoten, Lernen und RAG, moduliert durch LimbusAffektus."""
     DEFAULT_CONFIG = {
         "embedding_dim": 128, "chunk_size": 500, "chunk_overlap": 100, "training_epochs": 1, "training_files": [],
         "semantic_nodes": { # Standard-Knotendefinitionen, können überschrieben werden
@@ -787,19 +796,41 @@ class QuantumEnhancedTextProcessor:
         "max_prompt_results": 3, "relevance_threshold": 0.08, "tfidf_max_features": 5000,
         "use_quantum_nodes": True, "default_num_qubits": 10, "simulation_n_shots": 50,
         "simulation_steps_after_training": 0,
-        "enable_rag": True, "generator_model_name": "models/gemini-1.5-flash-latest", # Aktualisiert auf empfohlenes Modell
+        "enable_rag": True, "generator_model_name": "models/gemini-1.5-flash-latest",
         "generator_max_length": 8192, "generator_temperature": 0.7,
         "quantum_effect_variance_penalty": 0.5, "quantum_effect_activation_boost": 0.3,
         "quantum_effect_jump_llm_trigger": True,
         "enable_self_learning": True, "self_learning_file_path": "./training_data/learn.txt",
         "self_learning_source_name": "Generated Responses",
-        # NEU: Limbus Affektus Konfiguration
+        # Limbus Affektus Basisparameter
         "limbus_emotion_decay": 0.95,
         "limbus_arousal_sensitivity": 1.5,
         "limbus_pleasure_sensitivity": 1.0,
         "limbus_dominance_sensitivity": 1.0,
-        "limbus_num_qubits": 4 # Beispiel, kann in config.json überschrieben werden
+        "limbus_num_qubits": 4,
+
+        # --- NEU: Limbus Einflussfaktoren ---
+        # RAG Generation
+        "limbus_influence_prompt_level": 0.5,      # Wie stark Emotionen den Prompt-Zusatz beeinflussen (0=kein Einfluss, 1=voller Wertebereich)
+        "limbus_influence_temperature_arousal": 0.1, # Additiver Faktor pro Arousal-Punkt
+        "limbus_influence_temperature_dominance": -0.1,# Additiver Faktor pro Dominance-Punkt
+        "limbus_min_temperature": 0.3,             # Minimale erlaubte Temperatur
+        "limbus_max_temperature": 1.0,             # Maximale erlaubte Temperatur
+        # Retrieval
+        "limbus_influence_threshold_arousal": -0.03, # Additiver Faktor pro Arousal-Punkt (negativ = niedriger Threshold bei hoher Arousal)
+        "limbus_influence_threshold_pleasure": 0.03, # Additiver Faktor pro Pleasure-Punkt (positiv = höherer Threshold bei hoher Pleasure)
+        "limbus_min_threshold": 0.02,              # Minimaler erlaubter Threshold
+        "limbus_max_threshold": 0.2,               # Maximaler erlaubter Threshold
+        "limbus_influence_ranking_bias_pleasure": 0.02, # Additiver Score-Bonus pro Pleasure-Punkt
+        # Lernen
+        "limbus_influence_learning_rate_multiplier": 0.1, # Multiplikativer Faktor pro (Arousal+Pleasure)/2 Punkt (0.1 = +/-10%)
+        "limbus_min_lr_multiplier": 0.5,           # Minimaler Lernraten-Multiplikator
+        "limbus_max_lr_multiplier": 1.5,           # Maximaler Lernraten-Multiplikator
+        # Quanteneffekte (im Retrieval)
+        "limbus_influence_variance_penalty": 0.1,  # Additiver Faktor pro (Arousal-Pleasure)/2 Punkt
+        "limbus_influence_activation_boost": 0.05, # Additiver Faktor pro (Pleasure-Arousal)/2 Punkt
     }
+
 
     def __init__(self, config_path: Optional[str] = None, config_dict: Optional[Dict]=None):
         """Initialisiert den Prozessor mit einer Konfiguration."""
@@ -816,7 +847,7 @@ class QuantumEnhancedTextProcessor:
 
         self._initialize_semantic_nodes() # Initialisiert normale Knoten basierend auf Config
 
-        # Erstelle LimbusAffektus Knoten, falls noch nicht durch Config erstellt
+        # Erstelle LimbusAffektus Knoten, falls noch nicht durch Config erstellt oder geladen
         limbus_label = "Limbus Affektus"
         if limbus_label not in self.nodes:
              print(f"INFO: Erstelle '{limbus_label}' Knoten...")
@@ -831,9 +862,10 @@ class QuantumEnhancedTextProcessor:
              except Exception as e:
                   print(f"FEHLER beim Erstellen des '{limbus_label}' Knotens: {e}")
         elif isinstance(self.nodes[limbus_label], LimbusAffektus):
-             # Wenn er schon existiert (z.B. aus State geladen), setze die Config Referenz
+             # Wenn er schon existiert (z.B. aus State geladen), setze die Config Referenz neu
+             print(f"INFO: Setze Config-Referenz für geladenen '{limbus_label}' Knoten.")
              self.nodes[limbus_label].config = self.config
-             # Lade Parameter neu aus Config
+             # Lade Parameter neu aus Config, falls sie sich geändert haben
              self.nodes[limbus_label].decay = self.config.get("limbus_emotion_decay", 0.95)
              self.nodes[limbus_label].arousal_sens = self.config.get("limbus_arousal_sensitivity", 1.5)
              self.nodes[limbus_label].pleasure_sens = self.config.get("limbus_pleasure_sensitivity", 1.0)
@@ -857,6 +889,7 @@ class QuantumEnhancedTextProcessor:
         if quantum_node_count > 0: print(f" -> Davon {quantum_node_count} Quantenknoten.")
         print(f" -> RAG (Textgenerierung via Gemini) {'AKTIVIERT' if self.rag_enabled else 'DEAKTIVIERT'}")
         print(f" -> Self-Learning {'AKTIVIERT' if self.self_learning_enabled else 'DEAKTIVIERT'} (Ziel: {self.learn_file_path})")
+        if limbus_label in self.nodes: print(f" -> Limbus Affektus Modulation AKTIVIERT.")
 
 
     def _load_config(self, path: str) -> Dict:
@@ -866,6 +899,7 @@ class QuantumEnhancedTextProcessor:
             # Starte mit Defaults und überschreibe/ergänze mit geladenen Werten
             config = self.DEFAULT_CONFIG.copy()
             config.update(loaded_config)
+            print(f"INFO: Konfiguration aus '{path}' geladen und mit Defaults gemischt.")
             return config
         except Exception as e:
             print(f"FEHLER Laden Config {path}: {e}. Nutze Defaults.")
@@ -916,6 +950,7 @@ class QuantumEnhancedTextProcessor:
 
         # Verhindere erneute Verarbeitung, außer es ist die Self-Learning Datei
         if effective_source_name in self.sources_processed and effective_source_name != self.learn_source_name:
+             # print(f"INFO: Quelle '{effective_source_name}' wurde bereits verarbeitet. Überspringe.") # Weniger verbose
              return
 
         print(f"\n📄 Verarbeite Datenquelle: {file_path} (Quelle: {effective_source_name})")
@@ -930,7 +965,7 @@ class QuantumEnhancedTextProcessor:
                  # UUID wird in _load_chunks neu generiert, daher immer hinzufügen/überschreiben?
                  # Aktuell: Fügen immer hinzu, da UUID neu ist. Alte Chunks bleiben drin.
                  self.chunks[chunk.uuid] = chunk
-                 self.process_chunk(chunk) # Assoziiert Knoten, stärkt Verbindungen
+                 self.process_chunk(chunk) # Assoziiert Knoten, stärkt Verbindungen (jetzt mit modulierter LR)
                  newly_added_chunk_ids.append(chunk.uuid)
 
             if effective_source_name != self.learn_source_name:
@@ -973,51 +1008,60 @@ class QuantumEnhancedTextProcessor:
         return chunks
 
     def process_chunk(self, chunk: TextChunk):
-        """Verarbeitet einen einzelnen Text-Chunk: Findet Knoten und stärkt Verbindungen."""
+        """Verarbeitet Chunk, stärkt Verbindungen mit durch Limbus modulierter Lernrate."""
         activated_nodes_in_chunk: List[Node] = []
         semantic_node_definitions = self.config.get("semantic_nodes", {})
         chunk_text_lower = chunk.text.lower()
         chunk.activated_node_labels = [] # Reset für diesen Durchlauf
 
-        # print(f"\n--- Processing Chunk: Index={chunk.index}, Source='{chunk.source}' ---") # Debug entfernt
+        # Hole Limbus Zustand (falls vorhanden)
+        limbus_state = INITIAL_EMOTION_STATE.copy()
+        limbus_node = self.nodes.get("Limbus Affektus")
+        if isinstance(limbus_node, LimbusAffektus):
+             limbus_state = getattr(limbus_node, 'emotion_state', INITIAL_EMOTION_STATE).copy()
+        pleasure = limbus_state.get("pleasure", 0.0)
+        arousal = limbus_state.get("arousal", 0.0)
 
+        # --- MODULATION 4: Lernrate ---
+        base_lr = self.config.get("connection_learning_rate", 0.05)
+        lr_multiplier_factor = self.config.get("limbus_influence_learning_rate_multiplier", 0.1)
+        min_lr_multiplier = self.config.get("limbus_min_lr_multiplier", 0.5)
+        max_lr_multiplier = self.config.get("limbus_max_lr_multiplier", 1.5)
+        # Berechne Multiplikator basierend auf Durchschnitt von Arousal und Pleasure
+        lr_mod_input = (arousal + pleasure) / 2.0
+        current_lr_multiplier = 1.0 + (lr_mod_input * lr_multiplier_factor)
+        current_lr_multiplier = float(np.clip(current_lr_multiplier, min_lr_multiplier, max_lr_multiplier))
+        current_learning_rate = base_lr * current_lr_multiplier
+        # Optional: Debugging Output
+        # if random.random() < 0.01: # Nur gelegentlich ausgeben
+        #     print(f"DEBUG process_chunk: Base LR={base_lr:.4f}, Multiplier={current_lr_multiplier:.3f}, Current LR={current_learning_rate:.4f} (P:{pleasure:.2f}, A:{arousal:.2f})")
+
+        # Finde aktivierte Knoten (Code bleibt gleich)
         for node_label, keywords in semantic_node_definitions.items():
             node = self.nodes.get(node_label)
-            if not node: continue # Knoten muss existieren
-
+            if not node: continue
             matched_keyword = None
             for kw in keywords:
-                # Suche nach Keyword mit Wortgrenzen
                 if re.search(r'\b' + re.escape(kw.lower()) + r'\b', chunk_text_lower):
-                    matched_keyword = kw
-                    break # Erstes passendes Keyword reicht
-
+                    matched_keyword = kw; break
             if matched_keyword:
-                 # print(f"  ✅ MATCH FOUND: Node='{node_label}', Keyword='{matched_keyword}'") # Debug entfernt
                  activated_nodes_in_chunk.append(node)
                  if node.label not in chunk.activated_node_labels:
                      chunk.activated_node_labels.append(node.label)
 
-        # Stärke Verbindungen bei Koaktivierung von mindestens ZWEI *unterschiedlichen* Knoten
-        unique_activated_nodes = list({node.uuid: node for node in activated_nodes_in_chunk}.values()) # Eindeutige Knotenobjekte
-
-        # print(f"  --> Nodes activated: {[n.label for n in unique_activated_nodes]}") # Debug entfernt
-
+        # Stärke Verbindungen mit MODULIERTER Lernrate
+        unique_activated_nodes = list({node.uuid: node for node in activated_nodes_in_chunk}.values())
         if len(unique_activated_nodes) >= 2:
-            # print(f"  ⭐⭐⭐ FOUND CO-OCCURRENCE of {len(unique_activated_nodes)} nodes.") # Debug entfernt
             learning_signal = self.config.get("connection_strengthening_signal", 0.1)
-            lr = self.config.get("connection_learning_rate", 0.05)
-            # Stärke Verbindungen paarweise
+            # *** Verwende MODULIERTE Lernrate ***
+            lr_to_use = current_learning_rate
             for i in range(len(unique_activated_nodes)):
                 for j in range(i + 1, len(unique_activated_nodes)):
-                    node_a = unique_activated_nodes[i]
-                    node_b = unique_activated_nodes[j]
-                    # Füge hinzu/hole Verbindung und stärke sie in beide Richtungen
-                    conn_ab = node_a.add_connection(node_b) # Erstellt oder holt Verbindung A->B
-                    conn_ba = node_b.add_connection(node_a) # Erstellt oder holt Verbindung B->A
-                    if conn_ab: node_a.strengthen_connection(node_b, learning_signal=learning_signal, learning_rate=lr)
-                    if conn_ba: node_b.strengthen_connection(node_a, learning_signal=learning_signal, learning_rate=lr)
-        # else: print(f"  --> Less than 2 distinct node activations. No connections strengthened.") # Debug entfernt
+                    node_a = unique_activated_nodes[i]; node_b = unique_activated_nodes[j]
+                    conn_ab = node_a.add_connection(node_b); conn_ba = node_b.add_connection(node_a)
+                    # *** Übergib modifizierte Lernrate an strengthen_connection ***
+                    if conn_ab: node_a.strengthen_connection(node_b, learning_signal=learning_signal, learning_rate=lr_to_use)
+                    if conn_ba: node_b.strengthen_connection(node_a, learning_signal=learning_signal, learning_rate=lr_to_use)
 
     def update_tfidf_index(self):
         """Aktualisiert den TF-IDF Vektorizer und die Matrix basierend auf den aktuellen Chunks."""
@@ -1109,36 +1153,76 @@ class QuantumEnhancedTextProcessor:
 
 
     def respond_to_prompt(self, prompt: str) -> List[TextChunk]:
-        """Findet relevante Text-Chunks für einen Prompt, optional mit Quanten-Ranking."""
-        max_results = self.config.get("max_prompt_results", 3)
-        relevance_threshold = self.config.get("relevance_threshold", 0.1)
-        variance_penalty_factor = self.config.get("quantum_effect_variance_penalty", 0.5)
-        activation_boost_factor = self.config.get("quantum_effect_activation_boost", 0.3)
+        """Findet relevante Text-Chunks, moduliert durch LimbusAffektus (Threshold, Ranking, Quanten-Effekte)."""
+        # Hole Basis-Konfigurationswerte
+        base_max_results = self.config.get("max_prompt_results", 3)
+        base_relevance_threshold = self.config.get("relevance_threshold", 0.1)
+        base_variance_penalty_factor = self.config.get("quantum_effect_variance_penalty", 0.5)
+        base_activation_boost_factor = self.config.get("quantum_effect_activation_boost", 0.3)
+
+        # Hole Limbus Zustand (falls vorhanden)
+        limbus_state = INITIAL_EMOTION_STATE.copy() # Default neutral
+        limbus_node = self.nodes.get("Limbus Affektus")
+        if isinstance(limbus_node, LimbusAffektus):
+             limbus_state = getattr(limbus_node, 'emotion_state', INITIAL_EMOTION_STATE).copy()
+        pleasure = limbus_state.get("pleasure", 0.0)
+        arousal = limbus_state.get("arousal", 0.0)
+        # dominance = limbus_state.get("dominance", 0.0) # Aktuell nicht direkt für Retrieval genutzt
+
+        # --- MODULATION 1: Retrieval Threshold ---
+        threshold_mod_arousal = self.config.get("limbus_influence_threshold_arousal", -0.03)
+        threshold_mod_pleasure = self.config.get("limbus_influence_threshold_pleasure", 0.03)
+        min_threshold = self.config.get("limbus_min_threshold", 0.02)
+        max_threshold = self.config.get("limbus_max_threshold", 0.2)
+        # Berechne modifizierten Threshold
+        current_relevance_threshold = base_relevance_threshold + (arousal * threshold_mod_arousal) + (pleasure * threshold_mod_pleasure)
+        current_relevance_threshold = float(np.clip(current_relevance_threshold, min_threshold, max_threshold))
+        # Optional: Debugging Output
+        # if random.random() < 0.05:
+        #     print(f"DEBUG respond_to_prompt: Base Threshold={base_relevance_threshold:.3f}, Modulated Threshold={current_relevance_threshold:.3f} (P:{pleasure:.2f}, A:{arousal:.2f})")
+
+        # --- MODULATION 2: Quanteneffekt-Parameter ---
+        variance_mod = self.config.get("limbus_influence_variance_penalty", 0.1)
+        activation_mod = self.config.get("limbus_influence_activation_boost", 0.05)
+        # Berechne modifizierte Faktoren (Beispiel: Arousal erhöht Penalty, Pleasure erhöht Boost)
+        current_variance_penalty_factor = base_variance_penalty_factor + (arousal - pleasure)/2 * variance_mod
+        current_activation_boost_factor = base_activation_boost_factor + (pleasure - arousal)/2 * activation_mod
+        current_variance_penalty_factor = float(np.clip(current_variance_penalty_factor, 0.0, 1.0)) # Clamp [0, 1]
+        current_activation_boost_factor = float(np.clip(current_activation_boost_factor, 0.0, 1.0)) # Clamp [0, 1]
+        # Optional: Debugging Output
+        # if random.random() < 0.05:
+        #     print(f"DEBUG respond_to_prompt: Modulated VarPenalty={current_variance_penalty_factor:.3f}, Modulated ActBoost={current_activation_boost_factor:.3f}")
+
+        # --- MODULATION 3: Ranking Bias (einfach) ---
+        ranking_bias_factor = self.config.get("limbus_influence_ranking_bias_pleasure", 0.02)
+        ranking_bias = pleasure * ranking_bias_factor # Positives Pleasure -> kleiner Bonus, Negatives -> kleiner Malus
+        # Optional: Debugging Output
+        # if random.random() < 0.05:
+        #     print(f"DEBUG respond_to_prompt: Ranking Bias={ranking_bias:.3f}")
+
+        # --- Restlicher Retrieval Prozess ---
         prompt_lower = prompt.lower()
         semantic_node_definitions = self.config.get("semantic_nodes", {})
 
-        # 1. Finde relevante Knoten (direkt + verbunden)
+        # 1. Finde relevante Knoten (direkt + verbunden) - Code bleibt gleich
         directly_activated_nodes: List[Node] = []
         for node_label, keywords in semantic_node_definitions.items():
             if any(re.search(r'\b' + re.escape(kw.lower()) + r'\b', prompt_lower) for kw in keywords):
-                node = self.nodes.get(node_label)
+                node = self.nodes.get(node_label);
                 if node: directly_activated_nodes.append(node)
-
         related_nodes: set[Node] = set(directly_activated_nodes)
-        node_uuid_map = {n.uuid: n for n in self.nodes.values()} # UUID Map für schnellen Zugriff
+        node_uuid_map = {n.uuid: n for n in self.nodes.values()}
         if directly_activated_nodes:
              queue = deque(directly_activated_nodes)
              processed_for_spread = set(n.uuid for n in directly_activated_nodes)
-             # Einfache Breitensuche über eine Stufe starker Verbindungen
              while queue:
                   start_node = queue.popleft()
                   connections_dict = getattr(start_node, 'connections', {})
                   if not isinstance(connections_dict, dict): continue
-                  # Betrachte nur eine begrenzte Anzahl starker Verbindungen
                   strong_connections = sorted(
                       [conn for conn in connections_dict.values() if conn and getattr(conn, 'weight', 0) > 0.2],
                       key=lambda c: c.weight, reverse=True
-                  )[:5] # Top 5
+                  )[:5]
                   for conn in strong_connections:
                       target_uuid = getattr(conn, 'target_node_uuid', None)
                       if target_uuid and target_uuid not in processed_for_spread:
@@ -1146,30 +1230,23 @@ class QuantumEnhancedTextProcessor:
                            if target_node:
                                 related_nodes.add(target_node)
                                 processed_for_spread.add(target_uuid)
-                                # Optional: Weitere Stufen durch Hinzufügen zur Queue ermöglichen
-                                # queue.append(target_node)
         relevant_node_labels = {node.label for node in related_nodes}
 
-        # 2. Finde Kandidaten-Chunks basierend auf relevanten Knoten
+        # 2. Finde Kandidaten-Chunks - Code bleibt gleich
         candidate_chunks: List[TextChunk] = []
         if relevant_node_labels:
              candidate_chunks = [
                  chunk for chunk in self.chunks.values()
                  if chunk and hasattr(chunk, 'activated_node_labels') and any(label in chunk.activated_node_labels for label in relevant_node_labels)
              ]
-        else: # Fallback: Wenn keine Knoten matchen, nutze alle Chunks
-             candidate_chunks = list(self.chunks.values())
-
+        else: candidate_chunks = list(self.chunks.values())
         if not candidate_chunks: return []
 
-        # 3. TF-IDF Ranking (wenn Index verfügbar)
+        # 3. TF-IDF Ranking - Code bleibt gleich bis Score-Berechnung
         if self.vectorizer is None or self.tfidf_matrix is None or not self.chunk_id_list_for_tfidf:
-             print("WARNUNG: TF-IDF Index nicht verfügbar. Ranking übersprungen.")
-             return candidate_chunks[:max_results] # Gebe ungerankte Kandidaten zurück
-
+             return candidate_chunks[:base_max_results] # Nutze Basis-MaxResults
         try:
              prompt_vector = self.vectorizer.transform([prompt])
-             # Finde die Zeilenindizes der Kandidaten in der TF-IDF Matrix
              uuid_to_tfidf_index = {uuid: i for i, uuid in enumerate(self.chunk_id_list_for_tfidf)}
              candidate_matrix_indices = []
              valid_candidate_chunks_for_ranking = []
@@ -1178,16 +1255,11 @@ class QuantumEnhancedTextProcessor:
                       idx = uuid_to_tfidf_index[c.uuid]
                       candidate_matrix_indices.append(idx)
                       valid_candidate_chunks_for_ranking.append(c)
-
-             if not candidate_matrix_indices:
-                  print("WARNUNG: Keine der Kandidaten-Chunks im TF-IDF Index. Ranking übersprungen.")
-                  return candidate_chunks[:max_results]
-
-             # Berechne Cosinus-Ähnlichkeit nur für Kandidaten
+             if not candidate_matrix_indices: return candidate_chunks[:base_max_results]
              candidate_matrix = self.tfidf_matrix[candidate_matrix_indices, :]
              similarities = cosine_similarity(prompt_vector, candidate_matrix).flatten()
 
-             # 4. Wende Quanten-Effekte auf Scores an
+             # 4. Wende Quanten-Effekte & Ranking Bias auf Scores an
              scored_candidates = []
              for i, chunk in enumerate(valid_candidate_chunks_for_ranking):
                  base_score = similarities[i]
@@ -1201,57 +1273,60 @@ class QuantumEnhancedTextProcessor:
                              analysis = node.analyze_jumps(node.last_measurement_log)
                              sum_variance += analysis.get("state_variance", 0.0)
                              sum_activation += node.activation
-
                  if num_q_nodes > 0:
                       avg_activation = sum_activation / num_q_nodes
                       avg_variance = sum_variance / num_q_nodes
-                      quantum_adjustment = (avg_activation * activation_boost_factor) - (avg_variance * variance_penalty_factor)
+                      # *** Verwende MODULIERTE Faktoren ***
+                      quantum_adjustment = (avg_activation * current_activation_boost_factor) - (avg_variance * current_variance_penalty_factor)
 
-                 final_score = float(np.clip(base_score + quantum_adjustment, 0.0, 1.0))
+                 # *** Addiere RANKING BIAS ***
+                 biased_score = base_score + quantum_adjustment + ranking_bias
+                 final_score = float(np.clip(biased_score, 0.0, 1.0)) # Score bleibt [0, 1]
                  scored_candidates.append({"chunk": chunk, "score": final_score})
 
-             # 5. Finales Ranking und Auswahl
+             # 5. Finales Ranking und Auswahl mit MODULIERTEM Threshold
              ranked_candidates = sorted(scored_candidates, key=lambda x: x["score"], reverse=True)
-             final_results = [item["chunk"] for item in ranked_candidates if item["score"] >= relevance_threshold][:max_results]
+             # *** Verwende MODULIERTEN Threshold und Basis-MaxResults ***
+             final_results = [item["chunk"] for item in ranked_candidates if item["score"] >= current_relevance_threshold][:base_max_results]
 
-             # Fallback, wenn nichts über Schwelle
+             # Fallback, wenn nichts über (moduliertem) Threshold
              if not final_results and ranked_candidates:
                  final_results = [ranked_candidates[0]["chunk"]] # Nimm den besten
 
              return final_results
-
         except Exception as e:
              print(f"FEHLER TF-IDF/Quantum Ranking: {e}"); traceback.print_exc(limit=1)
-             return candidate_chunks[:max_results] # Fallback
+             return candidate_chunks[:base_max_results] # Fallback
 
 
     def generate_response(self, prompt: str) -> str:
-        """Generiert eine Antwort mit RAG, Quanteneffekten und optionalem Self-Learning."""
-        if not GEMINI_AVAILABLE: return "Fehler: Google Generative AI SDK nicht installiert."
-        if not self.rag_enabled: return "Fehler: RAG (Gemini) ist deaktiviert."
-
+        """Generiert Antwort mit RAG, Limbus-moduliertem Prompt & Temperatur."""
+        # Prüfungen: SDK, RAG, API Key - bleiben gleich
+        if not GEMINI_AVAILABLE: return "[Fehler: Gemini SDK fehlt]"
+        if not self.rag_enabled: return "[Fehler: RAG deaktiviert]"
         api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key: # Versuche Streamlit Secrets als Fallback
+        if not api_key: # Fallback Streamlit Secrets
             try: import streamlit as st; api_key = st.secrets.get("GEMINI_API_KEY")
             except Exception: pass
-        if not api_key: return "Fehler: Gemini API Key nicht gefunden."
+        if not api_key: return "[Fehler: Gemini API Key fehlt]"
 
-        # Initialisiere Gemini Modell, falls nötig
+        # Initialisiere Gemini Modell (bleibt gleich)
         try:
-            genai.configure(api_key=api_key)
-            model_name = self.config.get("generator_model_name", "models/gemini-1.5-flash-latest")
-            if not self.gemini_model or self.gemini_model.model_name != model_name:
-                print(f"INFO: Initialisiere Gemini Modell '{model_name}'...")
-                self.gemini_model = genai.GenerativeModel(model_name)
-        except Exception as e: return f"Fehler bei der Konfiguration der Gemini API: {e}"
-        if not self.gemini_model: return "Fehler: Gemini-Modellobjekt konnte nicht initialisiert werden."
+             genai.configure(api_key=api_key)
+             model_name = self.config.get("generator_model_name", "models/gemini-1.5-flash-latest")
+             if not self.gemini_model or self.gemini_model.model_name != model_name:
+                 print(f"INFO: Initialisiere Gemini Modell '{model_name}'...")
+                 self.gemini_model = genai.GenerativeModel(model_name)
+        except Exception as e: return f"[Fehler bei Gemini API Konfig: {e}]"
+        if not self.gemini_model: return "[Fehler: Gemini Modell Init fehlgeschlagen]"
 
-        print(f"\n💬 [Generator] RAG für: '{prompt}'")
-        # 1. Pre-Retrieval Simulation & Sprunganalyse
+        # print(f"\n💬 [Generator] RAG für: '{prompt}'") # Debug entfernt
+
+        # 1. Pre-Retrieval Simulation & Sprunganalyse (bleibt gleich)
         self.simulate_network_step(decay_connections=False)
         jump_trigger_active = False; significant_jump_nodes = []
+        # Code zur Sprunganalyse bleibt gleich
         if self.config.get("quantum_effect_jump_llm_trigger", True):
-            # ... (Logik zur Sprunganalyse bleibt gleich, wie im vorherigen Code) ...
             prompt_lower = prompt.lower(); semantic_node_definitions = self.config.get("semantic_nodes", {})
             directly_activated_q_nodes: List[Node] = [
                 node for node_label, keywords in semantic_node_definitions.items()
@@ -1263,73 +1338,103 @@ class QuantumEnhancedTextProcessor:
                     analysis = node.analyze_jumps(node.last_measurement_log)
                     if analysis.get("jump_detected", False):
                         jump_trigger_active = True
-                        jump_info_str = f"{node.label}(Jump:{analysis.get('max_jump_abs', 0)})"
+                        jump_info_str = f"{node.label}(J:{analysis.get('max_jump_abs', 0)})"
                         if jump_info_str not in significant_jump_nodes: significant_jump_nodes.append(jump_info_str)
 
-        # 2. Retrieval
+
+        # 2. Retrieval (ruft das modifizierte respond_to_prompt auf)
         retrieved_chunks = self.respond_to_prompt(prompt)
 
-        # 3. Baue Kontext für LLM
+        # 3. Baue Kontext für LLM (inkl. Limbus-Status für Prompt)
         arona_context_parts = []
-        # Finde relevante Knoten erneut für Konsistenz im Prompt
+        # Finde relevante Knoten erneut für Konsistenz im Prompt - Code bleibt gleich
         relevant_node_labels_for_context = set()
-        # ... (Logik zur Knotensuche wie in respond_to_prompt, um Redundanz zu vermeiden,
-        #      könnte respond_to_prompt auch die Labels zurückgeben) ...
-        # Beispielhafte einfache Neusuche:
         prompt_lower_ctx = prompt.lower(); semantic_defs_ctx = self.config.get("semantic_nodes", {})
         for node_label, keywords in semantic_defs_ctx.items():
              if any(re.search(r'\b' + re.escape(kw.lower()) + r'\b', prompt_lower_ctx) for kw in keywords):
-                  relevant_node_labels_for_context.add(node_label)
+                  if self.nodes.get(node_label): relevant_node_labels_for_context.add(node_label)
 
-        if relevant_node_labels_for_context: arona_context_parts.append(f"Identifizierte Konzepte: {', '.join(sorted(list(relevant_node_labels_for_context)))}.")
-        if jump_trigger_active: arona_context_parts.append(f"Quantensprung-Hinweis: Perspektivwechsel bzgl. {', '.join(significant_jump_nodes)} möglich.")
-        # Füge LimbusAffektus Zustand hinzu (Beispiel)
+        if relevant_node_labels_for_context: arona_context_parts.append(f"Konzepte: {', '.join(sorted(list(relevant_node_labels_for_context)))}.")
+        if jump_trigger_active: arona_context_parts.append(f"Q-Sprung Hinweis: {', '.join(significant_jump_nodes)}.")
+
+        # *** NEU: Füge Limbus PAD zum Kontext hinzu ***
+        limbus_state = INITIAL_EMOTION_STATE.copy()
         limbus_node = self.nodes.get("Limbus Affektus")
+        prompt_influence_level = self.config.get("limbus_influence_prompt_level", 0.5)
         if isinstance(limbus_node, LimbusAffektus):
-             pad = limbus_node.emotion_state
-             emotion_summary = f"Emotionale Tönung: P={pad.get('pleasure',0):.2f}, A={pad.get('arousal',0):.2f}, D={pad.get('dominance',0):.2f}"
+             limbus_state = getattr(limbus_node, 'emotion_state', INITIAL_EMOTION_STATE).copy()
+             # Skaliere den Einfluss auf den Prompt
+             p = limbus_state.get('pleasure', 0.0) * prompt_influence_level
+             a = limbus_state.get('arousal', 0.0) * prompt_influence_level
+             d = limbus_state.get('dominance', 0.0) * prompt_influence_level
+             emotion_summary = f"Emotion (PAD): P={p:.2f}, A={a:.2f}, D={d:.2f}" # Modulierter Zustand für Prompt
              arona_context_parts.append(emotion_summary)
+             # Optional: Debugging Output
+             # if random.random() < 0.05:
+             #     print(f"DEBUG generate_response: Adding Emotion to context: {emotion_summary} (Base P:{limbus_state.get('pleasure',0):.2f}, A:{limbus_state.get('arousal',0):.2f}, D:{limbus_state.get('dominance',0):.2f})")
 
+        # Füge abgerufene Chunks hinzu - Code bleibt gleich
         if retrieved_chunks:
-            context_text = "\n---\n".join([f"[{chunk.source}]: {chunk.text}" for chunk in retrieved_chunks])
-            arona_context_parts.append(f"Relevanter Kontext:")
+            # Gekürzt für Prompt, um Token-Limit nicht zu sprengen
+            context_text = "\n---\n".join([f"[{chunk.source[:15]}]: {chunk.text[:200]}..." for chunk in retrieved_chunks])
+            arona_context_parts.append(f"Kontext ({len(retrieved_chunks)} Ausschnitte):")
             arona_context_parts.append(context_text)
         else: arona_context_parts.append("Kein spezifischer Text-Kontext gefunden.")
         arona_context_string = "\n".join(arona_context_parts)
 
-        # 4. Baue finalen Prompt
+
+        # 4. Baue finalen Prompt (mit Hinweis auf internen Zustand inkl. Emotionen)
         input_prompt_for_gemini = f"""
-Du bist ein KI-Assistent, inspiriert von einem Quanten-NeuroPersona-Modell.
+Du bist eine KI mit internem Zustand (Konzepte, Emotionen, Quanten-Hinweise).
 Benutzer: "{prompt}"
 
-Interne Analyse/Kontext des Modells:
+Interner Zustand/Kontext:
 {arona_context_string}
 
-Anweisung: Beantworte die Frage des Benutzers präzise. Nutze den internen Kontext (Konzepte, Sprünge, Emotion, Textpassagen), um deine Antwort inhaltlich zu formen oder die Perspektive anzupassen. Erkläre den internen Prozess NICHT. Antworte natürlich.
+Anweisung: Beantworte die Frage des Benutzers. Nutze den internen Zustand (Konzepte, Emotionen, Q-Hinweise, Kontext-Ausschnitte), um den **Tonfall, Fokus oder die Perspektive** deiner Antwort subtil anzupassen. Erkläre den internen Prozess NICHT. Antworte natürlich.
 
 Antwort:
 """
-        # 5. Generation mit Gemini API
-        generated_text = "[Generierungsfehler]" # Default
+
+        # 5. Generation mit Gemini API (mit MODULIERTER Temperatur)
+        generated_text = "[Generierungsfehler]"
         try:
             start_gen_time = time.time()
+
+            # *** NEU: Moduliere Temperatur ***
+            base_temp = self.config.get("generator_temperature", 0.7)
+            temp_mod_arousal = self.config.get("limbus_influence_temperature_arousal", 0.1)
+            temp_mod_dominance = self.config.get("limbus_influence_temperature_dominance", -0.1)
+            min_temp = self.config.get("limbus_min_temperature", 0.3)
+            max_temp = self.config.get("limbus_max_temperature", 1.0)
+            # Hole aktuelle (unskalierte) Emotionen für Temperatur-Modulation
+            # limbus_state wurde bereits oben geholt
+            # pleasure = limbus_state.get("pleasure", 0.0) # Wird hier nicht direkt genutzt, aber zur Info
+            arousal = limbus_state.get("arousal", 0.0)
+            dominance = limbus_state.get("dominance", 0.0)
+            # Berechne modulierte Temperatur
+            current_temperature = base_temp + (arousal * temp_mod_arousal) + (dominance * temp_mod_dominance)
+            current_temperature = float(np.clip(current_temperature, min_temp, max_temp))
+            # Optional: Debugging Output
+            # if random.random() < 0.05:
+            #     print(f"DEBUG generate_response: Base Temp={base_temp:.2f}, Modulated Temp={current_temperature:.2f} (A:{arousal:.2f}, D:{dominance:.2f})")
+
             generation_config = genai.types.GenerationConfig(
-                temperature=self.config.get("generator_temperature", 0.7),
+                # *** Verwende MODULIERTE Temperatur ***
+                temperature=current_temperature,
                 max_output_tokens=self.config.get("generator_max_length", 8192)
             )
-            safety_settings=[ # Standard-Sicherheitseinstellungen
-                {"category": c, "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
-                for c in ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
-                          "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]
-            ]
+            # Safety Settings bleiben gleich
+            safety_settings=[ {"category": c, "threshold": "BLOCK_MEDIUM_AND_ABOVE"} for c in ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]]
+
             response = self.gemini_model.generate_content(
                 input_prompt_for_gemini,
                 generation_config=generation_config,
                 safety_settings=safety_settings
             )
 
+            # Restliche Antwortverarbeitung und Self-Learning - Code bleibt gleich
             if not response.candidates:
-                 # Detailliertere Blockierungsinfo
                  reason = "Unbekannt"; ratings_str = "N/A"
                  if hasattr(response, 'prompt_feedback'):
                      if hasattr(response.prompt_feedback, 'block_reason'): reason = response.prompt_feedback.block_reason.name
@@ -1341,11 +1446,11 @@ Antwort:
                  generated_text = getattr(response, 'text', None)
                  if generated_text is None and hasattr(response, 'parts'): # Fallback für Multi-Part
                      try: generated_text = "".join(part.text for part in response.parts)
-                     except Exception: generated_text = "[Fehler beim Extrahieren der Antwort-Parts]"
-                 generated_text = generated_text.strip() if generated_text else "[Leere Antwort von Gemini erhalten]"
-                 print(f"   -> Generierung mit Gemini in {time.time() - start_gen_time:.2f}s.")
+                     except Exception: generated_text = "[Fehler Parts]"
+                 generated_text = generated_text.strip() if generated_text else "[Leere Antwort]"
+                 print(f"   -> Generierung mit Gemini in {time.time() - start_gen_time:.2f}s (Mod. Temp: {current_temperature:.2f})")
 
-            # 6. Self-Learning Schritt
+            # 6. Self-Learning Schritt (Logik bleibt gleich)
             is_valid_response = (generated_text and not generated_text.startswith("[") and not generated_text.endswith("]"))
             if self.self_learning_enabled and is_valid_response:
                  print(f"\n🎓 [Self-Learning] Starte Lernzyklus...")
@@ -1353,12 +1458,16 @@ Antwort:
 
             return generated_text
 
+        # Fehlerbehandlung bleibt gleich
         except GoogleAPIError as api_err:
             print(f"FEHLER bei der Gemini API Anfrage: {api_err}")
-            return f"[Fehler: Google API Problem ({api_err.reason if hasattr(api_err,'reason') else '?'})]"
+            # Versuche, den Grund zu extrahieren, falls vorhanden
+            reason = getattr(api_err, 'reason', '?') if hasattr(api_err, 'reason') else '?'
+            message = getattr(api_err, 'message', str(api_err))
+            return f"[Fehler: Google API Problem (Reason: {reason}, Message: {message[:100]}...)]"
         except Exception as e:
             print(f"FEHLER während der Textgenerierung: {e}"); traceback.print_exc(limit=2)
-            return "[Fehler: Entschuldigung, ein interner Fehler ist aufgetreten.]"
+            return "[Fehler: Interner Fehler bei Generierung]"
 
 
     def _save_and_reprocess_response(self, response_text: str):
@@ -1393,6 +1502,11 @@ Antwort:
         # Durchschnittliche Aktivierung
         activations = [n.activation for n in self.nodes.values() if hasattr(n, 'activation') and isinstance(n.activation, (float, np.number)) and np.isfinite(n.activation)]
         summary["average_node_activation"] = round(np.mean(activations), 4) if activations else 0.0
+
+        # Limbus Zustand hinzufügen
+        limbus_node = self.nodes.get("Limbus Affektus")
+        if isinstance(limbus_node, LimbusAffektus):
+             summary["limbus_state_PAD"] = {k: round(v, 3) for k, v in limbus_node.emotion_state.items()}
 
         # Verbindungen zählen und Top finden
         total_valid_connections = 0; all_connections_found = []; nodes_with_connections_count = 0
@@ -1431,10 +1545,12 @@ Antwort:
             existing_uuids = {node.uuid for node in self.nodes.values()}
             for node in self.nodes.values():
                 if isinstance(getattr(node, 'connections', None), dict):
-                    node.connections = {
-                        tgt_uuid: conn for tgt_uuid, conn in node.connections.items()
-                        if conn and getattr(conn, 'target_node_uuid', tgt_uuid) in existing_uuids
-                    }
+                    # Erstelle neues Dict nur mit gültigen Verbindungen
+                    valid_connections = {}
+                    for tgt_uuid, conn in node.connections.items():
+                         if conn and getattr(conn, 'target_node_uuid', tgt_uuid) in existing_uuids:
+                              valid_connections[tgt_uuid] = conn
+                    node.connections = valid_connections # Ersetze altes Dict
 
             # 2. Serialisiere Chunks
             chunks_to_save = {
@@ -1450,7 +1566,8 @@ Antwort:
 
             # 4. Baue state_data zusammen
             state_data = {
-                "config": self.config, # Aktuelle Config mitspeichern
+                # WICHTIG: Speichere die zur Laufzeit verwendete Config, NICHT die Default Config
+                "config": self.config,
                 "nodes": nodes_data_for_json,
                 "chunks": chunks_to_save,
                 "sources_processed": list(self.sources_processed),
@@ -1459,7 +1576,7 @@ Antwort:
 
             # 5. Schreibe JSON
             with open(filepath, 'w', encoding='utf-8') as f:
-                # Sicherer Serializer
+                # Sicherer Serializer (unverändert)
                 def default_serializer(obj: Any) -> Any:
                     if isinstance(obj, np.ndarray): return obj.tolist()
                     if isinstance(obj, (datetime, deque)): return str(obj)
@@ -1469,7 +1586,6 @@ Antwort:
                     if isinstance(obj, (np.complex_, np.complex64, np.complex128)): return {'real': obj.real, 'imag': obj.imag}
                     if isinstance(obj, (np.bool_)): return bool(obj)
                     if isinstance(obj, (np.void)): return None # Kann nicht sinnvoll serialisiert werden
-                    # Fallback für andere Objekte (sollte durch __getstate__ abgedeckt sein)
                     try: return repr(obj)
                     except Exception: return f"<SerializationError: {type(obj)}>"
                 json.dump(state_data, f, indent=2, ensure_ascii=False, default=default_serializer)
@@ -1488,8 +1604,11 @@ Antwort:
             with open(filepath, 'r', encoding='utf-8') as f: state_data = json.load(f)
 
             # Erstelle Instanz mit gespeicherter Config
+            # Stelle sicher, dass die geladene Config alle NEUEN Default-Keys enthält
             config_from_state = state_data.get("config", {})
-            instance = cls(config_dict=config_from_state) # __init__ wird aufgerufen
+            merged_config = cls.DEFAULT_CONFIG.copy() # Starte mit aktuellen Defaults
+            merged_config.update(config_from_state)  # Überschreibe mit gespeicherten Werten
+            instance = cls(config_dict=merged_config) # __init__ wird aufgerufen mit gemischter Config
             if not instance: print("FEHLER: Instanzerstellung fehlgeschlagen."); return None
 
             # Lade Chunks
@@ -1525,16 +1644,19 @@ Antwort:
                          node_uuid_map[node.uuid] = node # Baue UUID Map
                      except Exception as e: print(f"FEHLER Restore Knoten '{node_label}': {e}"); traceback.print_exc(limit=1)
 
-            # Setze Config Referenz und Parameter für Limbus Affektus explizit
+            # Setze Config Referenz und Parameter für Limbus Affektus explizit NEU
+            # basierend auf der (potentiell aktualisierten) Config der Instanz
             limbus_label = "Limbus Affektus"
             if limbus_label in instance.nodes and isinstance(instance.nodes[limbus_label], LimbusAffektus):
                 limbus_node_loaded = instance.nodes[limbus_label]
-                limbus_node_loaded.config = instance.config # Setze aktuelle Config
+                limbus_node_loaded.config = instance.config # Setze aktuelle Config-Referenz
+                # Aktualisiere Parameter aus der aktuellen Config
                 limbus_node_loaded.decay = instance.config.get("limbus_emotion_decay", 0.95)
                 limbus_node_loaded.arousal_sens = instance.config.get("limbus_arousal_sensitivity", 1.5)
                 limbus_node_loaded.pleasure_sens = instance.config.get("limbus_pleasure_sensitivity", 1.0)
                 limbus_node_loaded.dominance_sens = instance.config.get("limbus_dominance_sensitivity", 1.0)
-                limbus_node_loaded.last_input_sum_for_pleasure = 0.0 # Reset
+                limbus_node_loaded.last_input_sum_for_pleasure = 0.0 # Reset bei Load
+                print(f"INFO: Limbus Node '{limbus_label}' Parameter aus aktueller Config übernommen.")
 
             # Stelle Verbindungen wieder her (NACHDEM alle Knoten geladen sind)
             total_connections_restored = 0
@@ -1557,10 +1679,14 @@ Antwort:
                                    try: conn.last_update_at = datetime.fromisoformat(conn_dict.get('last_update_at', ''))
                                    except: conn.last_update_at = datetime.now()
                                    conn.target_node_uuid = target_uuid # Wichtig
-                                   conn.target_node = target_node # Setze Live-Referenz
+                                   # conn.target_node = target_node # Setze KEINE Live-Referenz mehr hier, nur UUID
                                    # Füge wiederhergestellte Verbindung hinzu
                                    node.connections[target_uuid] = conn
                                    total_connections_restored += 1
+                                   # Informiere Zielknoten (für eingehende Liste)
+                                   if hasattr(target_node, 'add_incoming_connection_info'):
+                                       target_node.add_incoming_connection_info(node.uuid, node.label)
+
                                except Exception as conn_e: print(f"FEHLER Restore Conn '{node.label}'->'{target_uuid}': {conn_e}")
                      del node.connections_serializable_temp # Entferne temporäres Dict
 
@@ -1568,7 +1694,7 @@ Antwort:
             instance.sources_processed = set(state_data.get("sources_processed", []))
             instance.chunk_id_list_for_tfidf = state_data.get("chunk_id_list_for_tfidf", [])
 
-            # Aktualisiere TF-IDF Index
+            # Aktualisiere TF-IDF Index basierend auf geladenen Chunks und IDs
             instance.update_tfidf_index()
 
             print(f"\n✅ Zustand geladen ({len(instance.nodes)} Knoten, {len(instance.chunks)} Chunks, {total_connections_restored} Verbindungen wiederhergestellt).")
@@ -1580,7 +1706,7 @@ Antwort:
 # --- Beispielnutzung __main__ ---
 if __name__ == "__main__":
     # --- Dieser Teil bleibt unverändert zum Testen der Klasse ---
-    print("="*50 + "\n Starte Quantum-Enhanced Text Processor Demo \n" + "="*50)
+    print("="*50 + "\n Starte Quantum-Enhanced Text Processor Demo (v1.2 - Limbus Modulation) \n" + "="*50)
     CONFIG_FILE = "config_qllm.json"; STATE_FILE = "qetp_state.json"
 
     # Lade Zustand oder initialisiere neu
@@ -1608,20 +1734,46 @@ if __name__ == "__main__":
 
     print("\n--- Interaktive Abfrage (Typ 'exit' zum Beenden) ---")
     if processor.rag_enabled and not os.environ.get("GEMINI_API_KEY"):
-         print("\nWARNUNG: RAG aktiviert, aber GEMINI_API_KEY fehlt.")
+         # Versuche Fallback zu Streamlit Secrets vor der Warnung
+         try:
+             import streamlit as st
+             if not st.secrets.get("GEMINI_API_KEY"):
+                 print("\nWARNUNG: RAG aktiviert, aber GEMINI_API_KEY fehlt (weder Umgebungsvariable noch Streamlit Secret).")
+         except ImportError:
+              print("\nWARNUNG: RAG aktiviert, aber GEMINI_API_KEY fehlt (Umgebungsvariable).")
+         except Exception: # Falls st.secrets nicht existiert oder Fehler wirft
+              print("\nWARNUNG: RAG aktiviert, aber GEMINI_API_KEY fehlt (Umgebungsvariable, Streamlit Secrets nicht prüfbar).")
+
 
     while True:
         try:
             prompt = input("Prompt > ")
             if prompt.lower() == 'exit': break
             if not prompt: continue
+
+            # Führe vor der Antwort einen Simulationsschritt durch, um Emotionen etc. zu aktualisieren
+            # print("INFO: Simuliere Netzwerk-Schritt vor Antwort...") # Optional Info
+            processor.simulate_network_step(decay_connections=True) # Decay aktivieren im laufenden Betrieb
+
+            # Generiere die Antwort
             generated_response = processor.generate_response(prompt)
             print("\n--- Generierte Antwort ---"); print(generated_response); print("-" * 25)
-            if processor.self_learning_enabled and generated_response and not generated_response.startswith("["):
-                print("\n--- Speichere Zustand nach Lernzyklus ---")
-                processor.save_state(STATE_FILE)
+
+            # Zeige aktuellen Limbus-Zustand nach der Interaktion
+            limbus_node = processor.nodes.get("Limbus Affektus")
+            if isinstance(limbus_node, LimbusAffektus):
+                pad_state = {k: round(v, 3) for k, v in limbus_node.emotion_state.items()}
+                print(f"--- Aktueller Limbus Zustand: {pad_state} ---")
+
+            # Speichern nach erfolgreicher Antwort (inkl. Self-Learning falls aktiv)
+            # Self-Learning passiert jetzt IN generate_response, wenn aktiv und Antwort valide
+            # Speichern wir hier trotzdem, um den Netzwerk/Emotionszustand zu sichern
+            print("\n--- Speichere Zustand nach Interaktion ---")
+            processor.save_state(STATE_FILE)
+
         except KeyboardInterrupt: print("\nUnterbrochen."); break
         except Exception as e: print(f"\nFehler in der Hauptschleife: {e}"); traceback.print_exc(limit=1)
 
     print("\n--- Speichere finalen Zustand ---"); processor.save_state(STATE_FILE)
     print("\n" + "="*50 + "\n Demo beendet. \n" + "="*50)
+
