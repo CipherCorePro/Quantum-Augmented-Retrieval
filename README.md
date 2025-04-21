@@ -15,7 +15,7 @@
 
 ## 💡 Kernidee & Abstract
 
-**Titel**:
+
 **Generierungsbasiertes assoziatives Lernen in einem hybriden Quantum-RAG-System: Ein Framework für adaptive Wissensstrukturierung in KI**
 
 Dieses Projekt präsentiert ein neuartiges KI-Framework, das **Retrieval-Augmented Generation (RAG)** mit einer dynamischen, **quanteninspirierten semantischen Netzwerkarchitektur** verbindet. Das System implementiert einen **rekursiven Selbstlernzyklus**: Jeder generierte Output wird analysiert, über Schlüsselkonzepte mit dem internen Netzwerk assoziiert und als neue Information integriert.
