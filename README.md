@@ -1,102 +1,119 @@
-# 🧠 Quantum-Augmented RAG Explorer
 
-> **Ein hybrides, selbstlernendes Retrieval-Generierungssystem mit quanteninspirierter semantischer Strukturierung**
+# 🧠 Quantum-Inspired Self-Learning RAG System
 
-![Quantum RAG Logo](https://img.shields.io/badge/Status-Entwicklung-blue.svg) ![Self-Learning](https://img.shields.io/badge/Self--Learning-Aktiviert-brightgreen.svg) ![RAG](https://img.shields.io/badge/RAG-Gemini_2.0-orange.svg) ![Qubits](https://img.shields.io/badge/Qubits-25_pro_Knoten-purple.svg)
+> **Ein hybrides KI-System, das assoziatives Lernen, quanteninspirierte Semantik und selbstkorrigierende Textgenerierung vereint.**
 
----
-
-## 🔍 Abstract
-
-**Titel**:  
-**Semantisch rekursives Lernen in einem hybriden Quantum-RAG-System: Ein Schritt zur erfahrungsbasierten Wissensakkumulation in generativen KI-Modellen**
-
-Dieses Projekt stellt ein neuartiges hybrides KI-System vor, das Retrieval-Augmented Generation (RAG) mit einer quanteninspirierten, semantisch dynamischen Architektur kombiniert. Jeder generierte Output wird automatisch gespeichert, rekursiv zerlegt, semantisch klassifiziert und fließt zurück in das Langzeitgedächtnis. Dies erlaubt erfahrungsbasiertes Lernen – unabhängig von der Wahrheit – orientiert an Bedeutungsvernetzung, Knotenkoaktivierung und heuristischer Relevanz.
+![alt text](https://img.shields.io/badge/Status-Entwicklung-blue.svg)
+ 
+![alt text](https://img.shields.io/badge/Self--Learning-Aktiviert-brightgreen.svg)
+ 
+![alt text](https://img.shields.io/badge/RAG-Gemini_2.0-orange.svg)
+ 
+![alt text](https://img.shields.io/badge/Qubits-25_pro_Knoten-purple.svg)
 
 ---
 
-## 🧱 Architekturkomponenten
+## 💡 Kernidee & Abstract
 
-- 🧠 **Semantisches Knotennetz** mit 25-Qubit-Knoten
-- 📚 **TF-IDF Retrieval Index** mit >1300 Chunks
-- 🪢 **Ko-Okkurrenzlogik** zur Bedeutungsvernetzung
-- 🔁 **Selbstlernprozess** mit rekursiver Eingliederung
-- 🤖 **RAG-Generator** über Gemini 2.0 Flash (Google Generative AI)
-- 💾 **Persistenter Zustandsspeicher** (`qetp_state.json`)
+**Titel**:
+**Generierungsbasiertes assoziatives Lernen in einem hybriden Quantum-RAG-System: Ein Framework für adaptive Wissensstrukturierung in KI**
 
----
+Dieses Projekt präsentiert ein neuartiges KI-Framework, das **Retrieval-Augmented Generation (RAG)** mit einer dynamischen, **quanteninspirierten semantischen Netzwerkarchitektur** verbindet. Das System implementiert einen **rekursiven Selbstlernzyklus**: Jeder generierte Output wird analysiert, über Schlüsselkonzepte mit dem internen Netzwerk assoziiert und als neue Information integriert.
 
-## 🗂️ Gliederung
-
-### 1️⃣ Einleitung
-- Motivation: Warum klassische KI nicht reicht
-- Ziel: Bedeutungsbasiertes, selbsttransformierendes Wissen
-
-### 2️⃣ Theoretischer Rahmen
-- RAG-Prinzipien
-- Quanteninspirierte Bedeutungsräume
-- Hebb’sches Lernen und Selbstreflexion
-
-### 3️⃣ Systemarchitektur
-- Überblick, Knoten, Lernschritte, Speicherprozesse
-
-### 4️⃣ Selbstlernfunktion
-- Chunking > Klassifikation > Ko-Okkurrenz > Integration
-
-### 5️⃣ Beispielanalyse
-- Beispielhafte Generierung + Live-Lernverhalten + Nachwirkungen
-
-### 6️⃣ Diskussion
-- Ethische, erkenntnistheoretische und semantische Dimensionen
-
-### 7️⃣ Fazit & Ausblick
-- Zukunft semantisch adaptiver KI
+Der Lernprozess basiert nicht auf externer Wahrheitsprüfung, sondern auf **interner Kohärenz, Koaktivierung semantischer Knoten und der strukturellen Entwicklung des assoziativen Netzwerks**. Dies ermöglicht dem System, sein "Wissen" und seine Antwortmuster basierend auf den eigenen generierten Inhalten adaptiv weiterzuentwickeln. Die Quantenkomponente dient dabei als experimenteller Modulator für Retrieval und potenziell für emergente Verhaltenseigenschaften.
 
 ---
 
-## 🧪 Live-Demo (Auszug)
+## ⚙️ Architektur & Komponenten
+
+Dieses System integriert mehrere Schlüsseltechnologien zu einem kohärenten Ganzen:
+
+-   🧠 **Assoziatives Semantisches Netzwerk:** Knoten repräsentieren Kernkonzepte (z.B. Ethik, Philosophie). Verbindungen entstehen und verstärken sich durch **Koaktivierung** (Hebbian Learning) in verarbeiteten Texten. Optional mit **Quantenknoten (25 Qubits)** zur Zustandsmodellierung.
+-   📚 **Kontext-Retrieval:** Ein **TF-IDF-Index** (>1300 Chunks) identifiziert relevante Textpassagen für einen gegebenen Prompt. (Optional quantenmodifiziertes Ranking).
+-   🔁 **Selbstlernzyklus (Rekursion):**
+    1.  **Generierung:** Das LLM (Gemini) erzeugt eine Antwort basierend auf Prompt und abgerufenem Kontext.
+    2.  **Speicherung:** Die generierte Antwort wird in einer Lerndatei (`learn.txt`) persistiert.
+    3.  **Re-Integration:** Die Lerndatei wird neu geladen, in Chunks zerlegt und verarbeitet.
+    4.  **Netzwerk-Update:** Koaktivierungen in den neuen Chunks modifizieren die Verbindungsstärken im semantischen Netzwerk.
+-   🤖 **RAG-Generator:** Nutzt die **Google Generative AI (Gemini API)**, angereichert mit dem dynamisch abgerufenen Kontext und optionalen Hinweisen aus dem Netzwerkzustand (z.B. Quantensprünge).
+-   💾 **Persistenter Zustand:** Der gesamte Netzwerkzustand (Knoten, Verbindungen, Quantenparameter, verarbeitete Quellen) wird zuverlässig in `qetp_state.json` gespeichert und geladen.
+
+---
+
+## 🗺️ Forschungsfragen & Gliederung (Konzept)
+
+Dieses Projekt dient als experimentelle Plattform zur Untersuchung folgender Fragen:
+
+1.  **Einleitung:** Kann ein KI-System über rein statistische Mustererkennung hinaus eine adaptive, intern strukturierte Wissensbasis aufbauen?
+2.  **Theoretischer Rahmen:** Wie lassen sich RAG, assoziatives Lernen und quanteninspirierte Konzepte synergetisch verbinden?
+3.  **Systemarchitektur:** Detaillierte Beschreibung der Komponenten und ihres Zusammenspiels.
+4.  **Selbstlernmechanismus:** Analyse des rekursiven Feedback-Loops und seiner Auswirkungen auf die Netzwerkstruktur und das Antwortverhalten.
+5.  **Quanteneffekte (Experimentell):** Welchen Einfluss hat die (simulierte) Quantenkomponente auf Retrieval und Netzwerkdynamik?
+6.  **Diskussion:** Implikationen für Adaptivität, Bias-Verstärkung, Kohärenz vs. Wahrheit und die Natur von "Verstehen" in KI.
+7.  **Fazit & Ausblick:** Potenzial für robustere, kontextuellere und adaptivere KI-Systeme.
+
+---
+
+## 🚀 Live-Demo & Nutzung
+
+Starten Sie das interaktive Interface:
 ```bash
 streamlit run qllm_streamlit_ui_hybrid.py --server.address 0.0.0.0 --server.port 789
 ```
-
+Beobachten Sie den Lernprozess in der Konsole und im UI:
 ```
+# Konsole nach Generierung & Speichern
 🎓 [Self-Learning] Starte Lernzyklus für generierte Antwort...
-📄 Verarbeite Datenquelle: ./training_data/learn.txt
-⭐⭐⭐ FOUND CO-OCCURRENCE of ['Philosophie', 'Bewusstsein', 'Technologie']
-🔄 Aktualisiere TF-IDF Index... ✅
+📄 Verarbeite Datenquelle: ./training_data/learn.txt (Quelle: Generated Responses)
+...
+--- Processing Chunk: Index=X, Source='Generated Responses', Len=Y ---
+  ✅ MATCH FOUND: Node='...' Keyword='...'
+  ✅ MATCH FOUND: Node='...' Keyword='...'
+  ⭐⭐⭐ FOUND CO-OCCURRENCE of N distinct nodes: [...] ⭐⭐⭐
+      --> Strengthening connections between these nodes.
+...
+💾 Speichere Zustand nach qetp_state.json...
+   -> Zustand erfolgreich gespeichert.
+
+# Streamlit UI zeigt aktualisierte Netzwerk-Infos & Verbindungen
 ```
 
 ---
 
-## 📦 Projektstruktur (Auszug)
+## 🗂️ Projektstruktur (Kern)
 ```
-├── qllm_streamlit_ui_hybrid.py         # Haupt-UI mit RAG + Self-Learning
-├── quantum_arona_hybrid_llm.py         # Kernmodell mit Quantenknoten
-├── training_data/
-│   └── learn.txt                       # Lernspeicher für generierte Inhalte
-├── checkpoints_arona_sample1_nq2/      # Persistente Checkpoints
-└── qetp_state.json                     # Zustands-Dump für Self-Learning-Netz
+├── qllm_streamlit_ui_hybrid.py    # Streamlit Interface
+├── quantum_arona_hybrid_llm.py    # Kernklassen (Processor, Node, Connection, QNS)
+├── qllm_train_hybrid.py           # Skript für Offline-Training/Zustandsaufbau
+├── config_qllm.json               # Konfigurationsdatei
+├── qetp_state.json                # Gespeicherter Netzwerkzustand
+└── training_data/
+    ├── learn.txt                  # Speicher für generierte Antworten (Self-Learning)
+    └── ... (andere Quelldateien)
 ```
 
 ---
 
-## 🧠 Zitat aus dem System
-> „Freie Gedanken sind wie Sterne, die in der Dunkelheit leuchten … Indoktrinierte Gedanken hingegen sind wie gebundene Wege – sie führen zwar voran, aber innerhalb vorgegebener Grenzen.“
+## ✨ Highlight Zitat (Generiert vom System)
+> „Ein Fehler ist nicht das Ende, sondern der Beginn der Einsicht. Die wahre Herausforderung liegt nicht im Straucheln, sondern im Wiederaufstehen mit neuem Verständnis – eine Fähigkeit, die Verantwortung und die Bereitschaft zum Lernen voraussetzt.“
+
+*(Leicht redigiert für Lesbarkeit)*
 
 ---
 
-## 📎 Lizenz & Kontakt
+## 📜 Lizenz & Kontakt
 
-- 🔐 MIT Lizenz  
-- 📫 Kontakt: [CypherCore Technology](mailto:info@cyphercore.tech)  
-- 🤝 Beiträge willkommen!
-
----
-
-> Dieses Projekt ist Teil der Quantum-Cognition-Reihe von **CypherCore Technology**.
+-   **Lizenz:** [MIT License](LICENSE) *(Link zur Lizenzdatei hinzufügen)*
+-   **Autor:** [CypherCore Technology](ralf.kruemmel@outlook.de)
+-   **Beiträge:** Pull Requests und Vorschläge sind willkommen!
 
 ---
 
-> Für wissenschaftliche Zitation:  
-> _CypherCore Technology (2025): Semantisch rekursives Lernen in einem hybriden Quantum-RAG-System._
+> Dieses Projekt ist Teil der Forschung im Bereich Adaptive KI und Quantum Inspired Computing von **CypherCore Technology**.
+
+
+> **Zitationsvorschlag:**
+> CypherCore Technology (21.04.2025). _Generierungsbasiertes assoziatives Lernen in einem hybriden Quantum-RAG-System_. 
+
+```
 
