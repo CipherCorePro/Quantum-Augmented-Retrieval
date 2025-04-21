@@ -97,7 +97,7 @@ Beobachten Sie den Lernprozess in der Konsole und im UI:
 ## ✨ Highlight Zitat (Generiert vom System)
 > „Ein Fehler ist nicht das Ende, sondern der Beginn der Einsicht. Die wahre Herausforderung liegt nicht im Straucheln, sondern im Wiederaufstehen mit neuem Verständnis – eine Fähigkeit, die Verantwortung und die Bereitschaft zum Lernen voraussetzt.“
 
-*(Leicht redigiert für Lesbarkeit)*
+
 
 ---
 
